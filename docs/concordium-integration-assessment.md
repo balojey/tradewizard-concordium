@@ -103,6 +103,8 @@ The interesting claim is not "our agent has a badge". It is: **every autonomous 
 - **Badge means accountable, not endorsed** — Concordium explicitly does not review code or behaviour. Don't overclaim in the UI or the pitch.
 - **Sponsored fees are not free fees.** Someone funds the sponsor account; on testnet the facilitator account needs CCD.
 - **`@x402/concordium` is ~5 months old.** Budget for sharp edges; treat the facilitator as the riskiest component and prove it against testnet before building anything on top.
+- **Identity issuance cannot be automated.** Every account needs an IDP-issued identity, and the testnet IDP's endpoint is not publicly reachable — so the first account comes from an interactive wallet session. See `docs/concordium-spike.md`.
+- **A valid badge is rare in practice.** Of 31 sampled testnet agents only 5 passed `check_badge`; the usual causes are legacy card embedding, dead `agent_uri` hosts and hash mismatches. Card hosting is load-bearing: stable public URL, immutable bytes, re-pin on edit.
 
 ## 5. Suggested scope for the build window
 

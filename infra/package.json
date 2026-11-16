@@ -58,6 +58,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@concordium/web-sdk": "^12.0.2",
     "@types/aws-lambda": "^8.10.161",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.15.21",
