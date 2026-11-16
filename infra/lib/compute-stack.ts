@@ -55,6 +55,7 @@ export class ComputeStack extends cdk.Stack {
   public readonly pushDeliveryHandler: lambdaNode.NodejsFunction;
   public readonly webhookDeliveryHandler: lambdaNode.NodejsFunction;
   public readonly notificationPrefsHandler: lambdaNode.NodejsFunction;
+  public readonly concordiumAgentHandler: lambdaNode.NodejsFunction;
   public readonly subscriptionApiHandler: lambdaNode.NodejsFunction;
   public readonly supportApiHandler: lambdaNode.NodejsFunction;
   public readonly newsletterApiHandler: lambdaNode.NodejsFunction;
@@ -880,6 +881,39 @@ export class ComputeStack extends cdk.Stack {
 
     dbSecret.grantRead(this.notificationPrefsHandler);
 
+    // ─── Concordium Agent Registry API ────────────────────────────────────────
+    //
+    // Owns the registration state around an on-chain agent and hosts its Agent
+    // Card publicly. Minting itself is an operator action (`scripts/concordium/
+    // agent.mjs`) because the registry service holds no keys: every write is a
+    // sign-ready payload the caller must sign.
+    //
+    // The card base URL is derived from the REST API id rather than
+    // `restApi.url`, so this Lambda does not depend on the stage deployment
+    // (which in turn depends on the routes below producing this function).
+    const concordiumAgent = new lambdaNode.NodejsFunction(this, 'ConcordiumAgentHandler', {
+      functionName: resourceName(config.envName, 'concordium-agent'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: 'services/concordium-agent/handler.ts',
+      handler: 'handler',
+      timeout: lambdaTimeout,
+      memorySize: 256,
+      environment: {
+        DB_SECRET_ARN: dbSecret.secretArn,
+        DB_HOST: dbEndpoint,
+        CONCORDIUM_NETWORK: process.env.CONCORDIUM_NETWORK ?? 'testnet',
+        CONCORDIUM_CARD_BASE_URL: `https://${this.restApi.restApiId}.execute-api.${config.region}.amazonaws.com/${isProd ? 'v1' : 'dev'}`,
+      },
+      bundling: {
+        minify: isProd,
+        sourceMap: !isProd,
+      },
+      description: 'Concordium agent registry: agent card hosting and registration state',
+    });
+
+    dbSecret.grantRead(concordiumAgent);
+    this.concordiumAgentHandler = concordiumAgent;
+
     // ─── Renewal Queue (declared before subscription handler so it can reference the ARN) ──
 
     // SQS Dead Letter Queue for renewal failures
@@ -1353,6 +1387,32 @@ export class ComputeStack extends cdk.Stack {
     userNewsletter.addMethod('GET', newsletterIntegration, authMethodOptions);
     userNewsletter.addMethod('POST', newsletterIntegration, authMethodOptions);
     userNewsletter.addResource('dismiss').addMethod('POST', newsletterIntegration, authMethodOptions);
+
+    // /concordium/agents
+    //
+    // GET .../{id}/card is intentionally unauthenticated: the registry and any
+    // counterparty agent fetch it without credentials, and the on-chain
+    // metadata hash covers exactly the bytes served there. Every state-changing
+    // route requires Cognito.
+    const concordium = this.restApi.root.addResource('concordium');
+    const concordiumAgents = concordium.addResource('agents');
+    const concordiumIntegration = new apigateway.LambdaIntegration(this.concordiumAgentHandler, {
+      proxy: true,
+    });
+
+    concordiumAgents.addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgents.addMethod('GET', concordiumIntegration, authMethodOptions);
+
+    const concordiumAgentById = concordiumAgents.addResource('{id}');
+    concordiumAgentById.addMethod('GET', concordiumIntegration, authMethodOptions);
+    concordiumAgentById.addResource('mint').addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgentById.addResource('verify').addMethod('POST', concordiumIntegration, authMethodOptions);
+
+    const concordiumAgentCard = concordiumAgentById.addResource('card');
+    concordiumAgentCard.addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgentCard.addMethod('GET', concordiumIntegration, {
+      authorizationType: apigateway.AuthorizationType.NONE,
+    });
 
     // ─── Portfolio Manager Lambda Functions ───────────────────────────────────
 

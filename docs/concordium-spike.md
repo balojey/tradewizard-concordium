@@ -99,6 +99,31 @@ Everything below is real code with tests, and needs no Chain account to run or v
 - **Sorted-pair Merkle hashing hides ordering.** The first cut hashed each pair in sorted order, which made sibling order uncommitted — swapping two adjacent trades left the root identical, defeating the point of anchoring a *sequence* of decisions. Now ordered (`H(left ‖ right)`) with carry-up of an unpaired node and a verified leaf count.
 - **Carrier-grade NAT was accepted as public.** `isPubliclyHostableUri` initially allowed `100.64.0.0/10`, which is exactly where tunnelled dev boxes live — and several live testnet agents point at `100.120.x.x`, which can never verify.
 
+## Registry API (landed)
+
+`services/concordium-agent` — the state machine around the on-chain action, plus public card hosting.
+
+| Route | Auth | Purpose |
+| --- | --- | --- |
+| `POST /concordium/agents` | Cognito | create a pending agent: Concordium account + optional CIS-8 Polymarket key |
+| `GET /concordium/agents` | Cognito | list the caller's agents with cached badge trust |
+| `GET /concordium/agents/{id}` | Cognito | one agent + card URL |
+| `POST /concordium/agents/{id}/card` | Cognito | store the Agent Card, validating hash and public-URI shape |
+| `GET /concordium/agents/{id}/card` | **none** | serve the stored card byte-for-byte |
+| `POST /concordium/agents/{id}/mint` | Cognito | record token id/address/tx hash after the CLI write |
+| `POST /concordium/agents/{id}/verify` | Cognito | live `check_badge`, cache the result, return the verdict |
+
+Verified in the synthesized template: the card `GET` is the only unauthenticated route, every mutation is `COGNITO_USER_POOLS`, and the card base URL is derived from the REST API id so the Lambda never depends on the stage deployment.
+
+Two deliberate refusals in the write path, both learned from the sample of live agents:
+
+- a card whose bytes do not match the supplied hash is rejected (400) instead of stored;
+- an `agent_uri` on loopback, plain HTTP or a private range is rejected (400), because the registry can never fetch it and the agent would mint unverifiable.
+
+The card route sets `Cache-Control: no-store`: verification re-fetches that URL and compares hashes, so a cached copy would produce a false mismatch after any edit.
+
+Minting stays an operator action (`scripts/concordium/agent.mjs`) because the registry holds no keys; the API records the result rather than performing it.
+
 ## Verdict
 
 
