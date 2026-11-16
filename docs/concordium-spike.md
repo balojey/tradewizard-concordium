@@ -82,6 +82,24 @@ Incidental: installing `@x402/next` exceeded a 5-minute timeout. The package fam
 - `infra/scripts/concordium/agent.mjs` — `info | card | register | set-uri | badge | check | call`, `--dry-run` supported.
 - `@concordium/web-sdk` added to `infra/` devDependencies.
 
+## Foundation landed (account-independent)
+
+Everything below is real code with tests, and needs no Chain account to run or verify:
+
+| Module | Purpose |
+| --- | --- |
+| `services/shared/concordium/mcp.ts` | typed client: MCP `tools/call` for reads/writes, REST `checkBadge` for verification, injected `fetch`, per-call timeouts (Lambda-safe) |
+| `services/shared/concordium/badge.ts` | verdict → three-state policy (`verified` / `registered` / `unknown`), fails closed, encodes "accountable, not endorsed" |
+| `services/shared/concordium/agent-card.ts` | byte-exact card hashing, served-card verification, public-URI guard |
+| `services/shared/concordium/decision-root.ts` | Merkle root + inclusion proofs over `portfolio_manager_decisions` for on-chain anchoring |
+| `sql/001-schema.sql` | `concordium_agents` (identity, CIS-8 binding, card + hash, cached badge trust) and `concordium_audit_anchors` (epoch roots) |
+
+60 unit tests. Two of them caught design bugs worth recording:
+
+- **Sorted-pair Merkle hashing hides ordering.** The first cut hashed each pair in sorted order, which made sibling order uncommitted — swapping two adjacent trades left the root identical, defeating the point of anchoring a *sequence* of decisions. Now ordered (`H(left ‖ right)`) with carry-up of an unpaired node and a verified leaf count.
+- **Carrier-grade NAT was accepted as public.** `isPubliclyHostableUri` initially allowed `100.64.0.0/10`, which is exactly where tunnelled dev boxes live — and several live testnet agents point at `100.120.x.x`, which can never verify.
+
 ## Verdict
+
 
 Identity + audit are cheap and, judged on depth of Concordium integration, disproportionately valuable: `register → card → badge → check` is a few hundred lines and we already have the signing path working. Payments remain the expensive, unproven third — worth a time-boxed attempt after the identity slice lands, not before.

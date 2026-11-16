@@ -1327,3 +1327,86 @@ ALTER TABLE newsletter_campaigns ADD COLUMN IF NOT EXISTS slug TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_newsletter_campaigns_slug
   ON newsletter_campaigns (slug)
   WHERE slug IS NOT NULL;
+
+-- ============================================================================
+-- CONCORDIUM AGENT REGISTRY (Trusted Agents hackathon)
+-- ============================================================================
+-- An agent's on-chain identity is a CIS-8004 NFT whose `agent_uri` points at an
+-- Agent Card and whose `metadata_hash` is the SHA-256 of the bytes served there.
+-- `card_json` is stored and served verbatim: re-serialising it changes the hash
+-- and silently invalidates the badge. Verification state is cached here so the
+-- UI does not hit the registry on every render; the registry remains the source
+-- of truth and `badge_trust` is only a cache of the last check.
+
+CREATE TABLE IF NOT EXISTS concordium_agents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  network TEXT NOT NULL DEFAULT 'testnet',
+
+  -- The identity-backed Concordium account that owns the agent NFT.
+  concordium_account TEXT NOT NULL,
+
+  -- CIS-8 binding to the operator's Polymarket (secp256k1) key. This is the
+  -- cross-chain anchor: identity on Concordium, execution on Polygon.
+  external_key_namespace TEXT,
+  external_key_hex TEXT,
+
+  token_id BIGINT,
+  token_address TEXT,
+  agent_uri TEXT,
+  metadata_hash_hex TEXT,
+  card_json TEXT,
+
+  status TEXT NOT NULL DEFAULT 'pending',
+  badge_trust TEXT NOT NULL DEFAULT 'unknown',
+  badge_checked_at TIMESTAMPTZ,
+  last_tx_hash TEXT,
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  CONSTRAINT valid_concordium_network CHECK (network IN ('devnet', 'testnet', 'mainnet')),
+  CONSTRAINT valid_concordium_agent_status CHECK (
+    status IN ('pending', 'minted', 'active', 'revoked', 'failed')
+  ),
+  CONSTRAINT valid_concordium_badge_trust CHECK (badge_trust IN ('verified', 'registered', 'unknown')),
+  -- A hash without a card is unpinnable; a card without a hash is unverifiable.
+  CONSTRAINT concordium_agent_card_pair CHECK (
+    (metadata_hash_hex IS NULL AND card_json IS NULL)
+    OR (metadata_hash_hex IS NOT NULL AND card_json IS NOT NULL)
+  ),
+  CONSTRAINT unique_concordium_agent_token UNIQUE (network, token_address)
+);
+
+CREATE INDEX IF NOT EXISTS idx_concordium_agents_user ON concordium_agents(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_concordium_agents_account ON concordium_agents(concordium_account);
+CREATE INDEX IF NOT EXISTS idx_concordium_agents_external_key ON concordium_agents(external_key_hex)
+  WHERE external_key_hex IS NOT NULL;
+
+DROP TRIGGER IF EXISTS update_concordium_agents_updated_at ON concordium_agents;
+CREATE TRIGGER update_concordium_agents_updated_at
+  BEFORE UPDATE ON concordium_agents
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- One epoch of portfolio decisions, committed as a Merkle root and anchored as
+-- registry metadata on the agent NFT. Subscribers re-derive the root from their
+-- own decision rows; `tx_hash` is the on-chain write that pinned it.
+CREATE TABLE IF NOT EXISTS concordium_audit_anchors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id UUID NOT NULL REFERENCES concordium_agents(id) ON DELETE CASCADE,
+  epoch_start TIMESTAMPTZ NOT NULL,
+  epoch_end TIMESTAMPTZ NOT NULL,
+  decision_count INTEGER NOT NULL,
+  root_hash TEXT NOT NULL,
+  leaf_version INTEGER NOT NULL DEFAULT 1,
+  tx_hash TEXT,
+  anchored_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  CONSTRAINT valid_concordium_anchor_epoch CHECK (epoch_end > epoch_start),
+  CONSTRAINT positive_concordium_anchor_count CHECK (decision_count > 0),
+  CONSTRAINT unique_concordium_anchor_epoch UNIQUE (agent_id, epoch_start, epoch_end)
+);
+
+CREATE INDEX IF NOT EXISTS idx_concordium_anchors_agent
+  ON concordium_audit_anchors(agent_id, epoch_end DESC);
