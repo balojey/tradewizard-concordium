@@ -914,6 +914,41 @@ export class ComputeStack extends cdk.Stack {
     dbSecret.grantRead(concordiumAgent);
     this.concordiumAgentHandler = concordiumAgent;
 
+    // Stages the on-chain anchor for each agent's decisions. It cannot sign —
+    // CIS-8004 metadata is owner-authorised — so it writes a sign-ready payload
+    // and the operator submits it. Failure is per-agent and logged, never fatal.
+    const concordiumAnchor = new lambdaNode.NodejsFunction(this, 'ConcordiumAnchorHandler', {
+      functionName: resourceName(config.envName, 'concordium-anchor'),
+      runtime: lambda.Runtime.NODEJS_20_X,
+      entry: 'services/concordium-anchor/handler.ts',
+      handler: 'handler',
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 256,
+      environment: {
+        DB_SECRET_ARN: dbSecret.secretArn,
+        DB_HOST: dbEndpoint,
+        CONCORDIUM_NETWORK: process.env.CONCORDIUM_NETWORK ?? 'testnet',
+        // Below the threshold an epoch is not worth a transaction; the cap keeps
+        // a single run's root small enough to reproduce quickly.
+        CONCORDIUM_ANCHOR_MIN_DECISIONS: process.env.CONCORDIUM_ANCHOR_MIN_DECISIONS ?? '3',
+        CONCORDIUM_ANCHOR_MAX_DECISIONS: process.env.CONCORDIUM_ANCHOR_MAX_DECISIONS ?? '500',
+      },
+      bundling: {
+        minify: isProd,
+        sourceMap: !isProd,
+      },
+      description: 'Stages Merkle roots of portfolio decisions for on-chain anchoring',
+    });
+
+    dbSecret.grantRead(concordiumAnchor);
+
+    const concordiumAnchorRule = new events.Rule(this, 'ConcordiumAnchorSchedule', {
+      ruleName: resourceName(config.envName, 'concordium-anchor-schedule'),
+      schedule: events.Schedule.rate(cdk.Duration.hours(6)),
+      description: 'Stages Concordium audit anchors for agents with new decisions',
+    });
+    concordiumAnchorRule.addTarget(new events_targets.LambdaFunction(concordiumAnchor));
+
     // ─── Renewal Queue (declared before subscription handler so it can reference the ARN) ──
 
     // SQS Dead Letter Queue for renewal failures

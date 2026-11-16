@@ -1410,3 +1410,13 @@ CREATE TABLE IF NOT EXISTS concordium_audit_anchors (
 
 CREATE INDEX IF NOT EXISTS idx_concordium_anchors_agent
   ON concordium_audit_anchors(agent_id, epoch_end DESC);
+
+-- The anchoring job stages the on-chain write but cannot perform it: the
+-- registry holds no keys and CIS-8004 metadata is owner-authorised, so the
+-- operator signs. These columns hold the sign-ready payload that was staged.
+ALTER TABLE concordium_audit_anchors ADD COLUMN IF NOT EXISTS metadata_key TEXT;
+ALTER TABLE concordium_audit_anchors ADD COLUMN IF NOT EXISTS payload_hex TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_concordium_anchors_pending
+  ON concordium_audit_anchors(agent_id)
+  WHERE tx_hash IS NULL;

@@ -124,6 +124,23 @@ The card route sets `Cache-Control: no-store`: verification re-fetches that URL 
 
 Minting stays an operator action (`scripts/concordium/agent.mjs`) because the registry holds no keys; the API records the result rather than performing it.
 
+## Anchoring job (landed)
+
+`services/concordium-anchor` — EventBridge every 6 hours, `CONCORDIUM_ANCHOR_MIN_DECISIONS` threshold (3 by default), 500-decision cap per epoch.
+
+Per active agent with a published card:
+
+1. read decisions since the last anchor, oldest first, with the timestamp formatting leaf hashing expects;
+2. hash them into a Merkle root (`shared/concordium/decision-root.ts`);
+3. ask the registry for a sign-ready `build_set_metadata` payload under key `decisionRoot:<epochEnd>`;
+4. insert the anchor row with `tx_hash` null and the payload attached.
+
+It does not sign, and it cannot: CIS-8004 metadata is owner-authorised, so the agent's sponsor is the only party who can pin. Staging the payload keeps the user's key out of our infrastructure and makes the operator action a one-liner.
+
+Failure is per-agent: one bad agent is recorded as `failed` and the rest still anchor. An epoch already staged is a `duplicate`, not an error. A registry response without `parameter_hex` fails the agent rather than staging an unsubmittable row.
+
+Metadata keys keep milliseconds (`decisionRoot:20261116T120000.000Z`) — two epochs can end in the same second, and a key collision would silently overwrite the previous root on-chain.
+
 ## Verdict
 
 

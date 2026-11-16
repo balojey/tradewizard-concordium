@@ -175,3 +175,149 @@ export function createPgRepository(): ConcordiumAgentRepository {
     },
   };
 }
+
+// ─── Audit anchoring ─────────────────────────────────────────────────────────
+//
+// The anchoring job can compute a root and stage the on-chain write, but it
+// cannot sign: the registry holds no keys and CIS-8004 metadata is
+// owner-authorised. So an anchor row is created with `tx_hash` null and the
+// sign-ready payload attached; the operator submits it and we record the hash.
+
+export interface AnchorableAgent {
+  agentId: string;
+  userId: string;
+  concordiumAccount: string;
+  /** decimal string — BIGINT comes back from pg as text */
+  tokenId: string;
+  /** last anchored epoch end, or null when the agent has never been anchored */
+  lastAnchoredAt: string | null;
+}
+
+export interface DecisionRowSource {
+  id: string;
+  session_id: string;
+  analysis_result_id: string | null;
+  action: string;
+  edge_met: boolean | null;
+  alignment_met: boolean | null;
+  conviction_score: number | string | null;
+  position_direction: string | null;
+  reasoning: string;
+  skip_reason: string | null;
+  /** ISO-8601 with millisecond precision, produced by the query itself. */
+  created_at: string;
+}
+
+export interface StageAnchorInput {
+  agentId: string;
+  epochStart: string;
+  epochEnd: string;
+  decisionCount: number;
+  rootHash: string;
+  leafVersion: number;
+  metadataKey: string;
+  payloadHex: string;
+}
+
+export interface ConcordiumAnchorRepository {
+  /** Active agents that have a token and a published card, i.e. anchorable. */
+  listAnchorableAgents(): Promise<AnchorableAgent[]>;
+  /** Decisions for one owner since the given timestamp, oldest first. */
+  listDecisionsSince(userId: string, since: string | null, limit: number): Promise<DecisionRowSource[]>;
+  /** Returns the new anchor id, or null when this epoch is already staged. */
+  stageAnchor(input: StageAnchorInput): Promise<string | null>;
+  recordAnchorTx(anchorId: string, txHash: string): Promise<void>;
+}
+
+/**
+ * Decisions are read with the timestamp formatting that leaf hashing expects, so
+ * an Aurora round-trip cannot change a leaf. Verification reads the same way.
+ */
+const DECISION_SELECT = `
+  d.id,
+  d.session_id,
+  d.analysis_result_id,
+  d.action,
+  d.edge_met,
+  d.alignment_met,
+  d.conviction_score::float8 AS conviction_score,
+  d.position_direction,
+  d.reasoning,
+  d.skip_reason,
+  to_char(d.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+`;
+
+export function createPgAnchorRepository(): ConcordiumAnchorRepository {
+  return {
+    async listAnchorableAgents() {
+      return withClient(async (client) => {
+        const { rows } = await client.query<AnchorableAgent>(
+          `SELECT
+             a.id AS "agentId",
+             a.user_id AS "userId",
+             a.concordium_account AS "concordiumAccount",
+             a.token_id::text AS "tokenId",
+             (
+               SELECT max(an.epoch_end)::text
+                 FROM concordium_audit_anchors an
+                WHERE an.agent_id = a.id
+             ) AS "lastAnchoredAt"
+           FROM concordium_agents a
+          WHERE a.status = 'active'
+            AND a.token_id IS NOT NULL
+            AND a.card_json IS NOT NULL`,
+        );
+        return rows;
+      });
+    },
+
+    async listDecisionsSince(userId, since, limit) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<DecisionRowSource>(
+          `SELECT ${DECISION_SELECT}
+             FROM portfolio_manager_decisions d
+             JOIN portfolio_manager_sessions s ON s.id = d.session_id
+            WHERE s.user_id = $1
+              AND ($2::timestamptz IS NULL OR d.created_at > $2::timestamptz)
+            ORDER BY d.created_at ASC
+            LIMIT $3`,
+          [userId, since, limit],
+        );
+        return rows;
+      });
+    },
+
+    async stageAnchor(input) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<{ id: string }>(
+          `INSERT INTO concordium_audit_anchors (
+             agent_id, epoch_start, epoch_end, decision_count, root_hash,
+             leaf_version, metadata_key, payload_hex
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (agent_id, epoch_start, epoch_end) DO NOTHING
+           RETURNING id`,
+          [
+            input.agentId,
+            input.epochStart,
+            input.epochEnd,
+            input.decisionCount,
+            input.rootHash,
+            input.leafVersion,
+            input.metadataKey,
+            input.payloadHex,
+          ],
+        );
+        return rows[0]?.id ?? null;
+      });
+    },
+
+    async recordAnchorTx(anchorId, txHash) {
+      await withClient(async (client) => {
+        await client.query(
+          `UPDATE concordium_audit_anchors SET tx_hash = $2, anchored_at = now() WHERE id = $1`,
+          [anchorId, txHash],
+        );
+      });
+    },
+  };
+}
