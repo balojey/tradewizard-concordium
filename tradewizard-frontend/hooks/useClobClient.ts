@@ -21,11 +21,31 @@ export default function useClobClient(
   const { eoaAddress, ethersSigner } = useWallet();
   const { derivedSafeAddressFromEoa } = useSafeDeployment(eoaAddress);
 
+  /**
+   * Polymarket wallet that holds the funds and authors the order:
+   *  - legacy Safe accounts        -> signature type 2 (POLY_GNOSIS_SAFE)
+   *  - modern Deposit Wallet       -> signature type 3 (POLY_1271)
+   *
+   * The installed clob-client enum stops at 2, so type 3 is passed numerically.
+   * The value goes into the EIP-712 order struct; the exchange validates the
+   * signature against the wallet type. Funder and type must describe the SAME
+   * wallet, which is why both come from the session rather than a fresh
+   * derivation: a derived legacy Safe address does not exist for a Deposit
+   * Wallet account, and orders funded by it are rejected.
+   */
+  const funderAddress = tradingSession?.safeAddress ?? derivedSafeAddressFromEoa;
+  // The enum is not exported from the client and stops at 2 in the installed
+  // version, so take the parameter type from the constructor and cast.
+  type ClobSignatureType = ConstructorParameters<typeof ClobClient>[4];
+  const signatureType = (
+    tradingSession?.walletType === "DEPOSIT_WALLET" ? 3 : 2
+  ) as unknown as ClobSignatureType;
+
   const clobClient = useMemo(() => {
     if (
       !ethersSigner ||
       !eoaAddress ||
-      !derivedSafeAddressFromEoa ||
+      !funderAddress ||
       !isTradingSessionComplete ||
       !tradingSession?.apiCredentials
     ) {
@@ -45,8 +65,8 @@ export default function useClobClient(
       POLYGON_CHAIN_ID,
       ethersSigner,
       tradingSession.apiCredentials,
-      2, // signatureType = 2 for embedded wallet EOA to sign for Safe proxy wallet
-      derivedSafeAddressFromEoa,
+      signatureType,
+      funderAddress,
       undefined, // mandatory placeholder
       false,
       builderConfig // Builder order attribution
@@ -54,7 +74,8 @@ export default function useClobClient(
   }, [
     eoaAddress,
     ethersSigner,
-    derivedSafeAddressFromEoa,
+    funderAddress,
+    signatureType,
     isTradingSessionComplete,
     tradingSession?.apiCredentials,
   ]);

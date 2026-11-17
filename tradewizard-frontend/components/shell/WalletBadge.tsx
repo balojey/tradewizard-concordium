@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Wallet, Check } from 'lucide-react';
-import { useWallet } from '@/providers/WalletContext';
 import usePolygonBalances from '@/hooks/usePolygonBalances';
-import useSafeDeployment from '@/hooks/useSafeDeployment';
+import { useWallet } from '@/providers/WalletContext';
+import { useTrading } from '@/providers/TradingProvider';
 import useAddressCopy from '@/hooks/useAddressCopy';
 import { usePortfolioSessions } from '@/hooks/usePortfolioSessions';
 import { cn } from '@/utils/classNames';
@@ -14,11 +14,13 @@ import { cn } from '@/utils/classNames';
  * Hover reveals a detail panel with total balance, committed capital, and available.
  */
 export function WalletBadge() {
-  const { eoaAddress, isConnected } = useWallet();
-  const { derivedSafeAddressFromEoa } = useSafeDeployment(eoaAddress);
-
-  // Display the Safe (trading) wallet address - this is the user's actual Polymarket wallet
-  const displayAddress = derivedSafeAddressFromEoa ?? eoaAddress;
+  // The trading wallet comes from the trading context, which is the same value
+  // the portfolio page renders. Deriving a legacy Safe here instead made the
+  // header show a different address from the rest of the app whenever the
+  // account uses a Polymarket Deposit Wallet.
+  const { isConnected } = useWallet();
+  const { eoaAddress, safeAddress } = useTrading();
+  const displayAddress = safeAddress ?? eoaAddress;
 
   // Query balance for the Safe wallet (the trading wallet), not the EOA
   const { usdcBalance } = usePolygonBalances(displayAddress);
