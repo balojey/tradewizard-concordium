@@ -18,9 +18,12 @@ export interface EnvironmentConfig {
   region: string;
   vpcCidr: string;
   rds: {
-    instanceClass: string; // Unused with Aurora Serverless v2 (kept for backward compat)
-    allocatedStorage: number; // Unused with Aurora Serverless v2 (auto-scales)
-    multiAz: boolean; // Aurora is multi-AZ by default
+    // These three are not read by the stack today: database-stack.ts hardcodes
+    // db.t4g.micro, 20 GB (auto-expanding to 50 GB) and single-AZ. They are kept
+    // so sizing can move into config without reshaping the interface.
+    instanceClass: string;
+    allocatedStorage: number;
+    multiAz: boolean;
     publiclyAccessible: boolean;
   };
   deletionProtection: boolean;

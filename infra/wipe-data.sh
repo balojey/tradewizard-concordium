@@ -2,7 +2,7 @@
 # ============================================================================
 # TradeWizard - Wipe All Data
 #
-# Clears ALL stored data for a given environment: Aurora PostgreSQL tables,
+# Clears ALL stored data for a given environment: RDS PostgreSQL tables,
 # S3 buckets, DynamoDB tables, EventBridge Schedules, CloudWatch logs,
 # and Cognito users.
 #
@@ -80,7 +80,7 @@ echo "║          ⚠️  DATA WIPE - ${ENV^^} ENVIRONMENT  ⚠️             
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║ This will PERMANENTLY DELETE all data:                      ║"
 echo "║                                                             ║"
-echo "║  • Aurora PostgreSQL: ALL table rows (schema preserved)     ║"
+echo "║  • RDS PostgreSQL: ALL table rows (schema preserved)     ║"
 echo "║  • S3: ALL objects in analysis + traces buckets             ║"
 echo "║  • DynamoDB: ALL items in dedup, connections, rate limits   ║"
 echo "║  • EventBridge: ALL tw-${ENV}-* schedules                      ║"
@@ -109,9 +109,9 @@ echo ""
 echo "Starting data wipe for ${ENV}..."
 echo ""
 
-# ─── 1. Aurora PostgreSQL - Truncate All Tables ──────────────────────────────
+# ─── 1. RDS PostgreSQL - Truncate All Tables ──────────────────────────────
 
-echo "═══ [1/6] Aurora PostgreSQL - Truncating all tables..."
+echo "═══ [1/6] RDS PostgreSQL - Truncating all tables..."
 
 DB_CREDS=$(aws secretsmanager get-secret-value \
   --secret-id "$DB_SECRET_ARN" \

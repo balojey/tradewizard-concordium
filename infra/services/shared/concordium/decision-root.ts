@@ -3,7 +3,7 @@
  *
  * The platform already records what each agent decided and why: `action`,
  * `edge_met`, `conviction_score`, `position_direction`, `reasoning`,
- * `skip_reason`, one row per analysis. That log lives in Aurora, where it is
+ * `skip_reason`, one row per analysis. That log lives in RDS, where it is
  * authoritative but not *provable* — a subscriber has to trust us not to edit it.
  *
  * This module makes it provable without storing anything per trade on-chain:
@@ -15,7 +15,7 @@
  * Design notes that are not obvious:
  *
  *  - Leaves are hashed over {@link AnchorableDecision} with the repo's canonical
- *    JSON form (`shared/audit-chain.ts`), so an Aurora round-trip cannot change a
+ *    JSON form (`shared/audit-chain.ts`), so an RDS round-trip cannot change a
  *    hash by reordering keys.
  *  - Pairs are hashed **in order** (`H(left ‖ right)`), never sorted. Sorting the
  *    pair would make sibling order uncommitted, so swapping two adjacent

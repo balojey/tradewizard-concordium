@@ -62,7 +62,7 @@ The tool also omits nothing structurally — inserting a vector length before th
 
 The root is committed as agent metadata rather than in a separate registry, so it travels with the agent: `agent_of` returns the record, `get_metadata` returns the root, and the CIS-8 binding ties both to the Polymarket signer key. A counterparty needs two HTTP calls and no trust in TradeWizard.
 
-Nothing per-trade is published — only the root. A subscriber proves their own trade with an inclusion path, and the proof endpoint (Aurora-backed, deployed separately) refuses to answer when the rebuild no longer matches, returning `409 epoch_not_reproducible`.
+Nothing per-trade is published — only the root. A subscriber proves their own trade with an inclusion path, and the proof endpoint (database-backed, deployed separately) refuses to answer when the rebuild no longer matches, returning `409 epoch_not_reproducible`.
 
 ## Still to do
 

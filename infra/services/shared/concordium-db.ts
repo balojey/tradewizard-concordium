@@ -262,7 +262,7 @@ export interface ConcordiumAnchorRepository {
 
 /**
  * Decisions are read with the timestamp formatting that leaf hashing expects, so
- * an Aurora round-trip cannot change a leaf. Verification reads the same way.
+ * an RDS round-trip cannot change a leaf. Verification reads the same way.
  */
 const DECISION_SELECT = `
   d.id,

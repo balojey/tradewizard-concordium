@@ -77,7 +77,7 @@ Cost: **medium** — it is a well-defined CRUD flow over MCP plus one wallet-sig
 
 Two ways to make it *verifiable* rather than merely stored, in increasing cost:
 
-- **Cheap and real:** `build_set_metadata` writes arbitrary key/values onto the agent NFT (only `agentWallet` is reserved). Anchor a rolling Merkle root of decision rows — e.g. `decision_root:epoch=12:hash=…`, once per epoch. Anyone can then prove a given decision was in the log without trusting our Aurora.
+- **Cheap and real:** `build_set_metadata` writes arbitrary key/values onto the agent NFT (only `agentWallet` is reserved). Anchor a rolling Merkle root of decision rows — e.g. `decision_root:epoch=12:hash=…`, once per epoch. Anyone can then prove a given decision was in the log without trusting our database.
 - **Subscribers can verify:** `verify_agent_card` + `/v1/check-badge/{account}` are public GETs, so the frontend can show a live "verified + auditable" state with no SDK and no secrets.
 
 Cost: **low** for the anchoring job (one Lambda on a schedule, reusing decision rows), **medium** for the UI proof viewer.

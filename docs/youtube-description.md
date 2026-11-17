@@ -14,7 +14,7 @@ Concordium Trusted Agents Hackathon, 2026.
 - **Audit.** Every six hours, the agent's decisions are hashed into a Merkle root that is pinned as metadata on the agent itself. A subscriber gets an inclusion proof for their own trade and recomputes the root against the on-chain value. Nothing per-trade is published, only the root.
 - **Refusal as evidence.** The proof endpoint rebuilds the epoch and will not answer if the rebuild no longer reproduces the anchored root. Edit or delete a decision after anchoring and proofs stop being served — a rewritten history becomes detectable instead of invisible.
 
-**How it's built.** TypeScript on AWS: CDK, Lambda, Aurora Serverless v2, DynamoDB, Next.js 16. The agent runs on Strands Agents SDK with Amazon Bedrock (Nebius Token Factory as an alternative provider). Concordium provides CIS-8004 identity plus CIS-8 cross-chain key binding; execution stays on Polygon, which is the "one agent, native to another chain" topology the registry documents.
+**How it's built.** TypeScript on AWS: CDK, Lambda, RDS PostgreSQL, DynamoDB, Next.js 16. The agent runs on Strands Agents SDK with Amazon Bedrock (Nebius Token Factory as an alternative provider). Concordium provides CIS-8004 identity plus CIS-8 cross-chain key binding; execution stays on Polygon, which is the "one agent, native to another chain" topology the registry documents.
 
 **No keys in our infrastructure.** The registry service holds no keys: every write is a build → sign → submit flow. Our Lambdas compute, verify and stage; the account owner signs. We never custody a user's signing key, which is why the final step of the demo is the operator's wallet rather than our server.
 

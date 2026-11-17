@@ -60,7 +60,7 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | CIS-8 binding to the Polymarket signer | ✅ executed: `eip155:137` secp256k1 key registered and attached to token `1224` |
 | x402 payments | ⛔ unproven, deferred by design |
 
-Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit mechanism is live too: a 5-decision epoch is pinned on token `1224` and reads back byte-identical, and an inclusion proof recomputes to that root. What is still unbuilt is the Aurora-backed proof endpoint — the code exists and is tested, but it needs the stack deployed. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
+Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit mechanism is live too: a 5-decision epoch is pinned on token `1224` and reads back byte-identical, and an inclusion proof recomputes to that root. What is still unbuilt is the database-backed proof endpoint — the code exists and is tested, but it needs the stack deployed. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
 
 ### How the pieces fit
 

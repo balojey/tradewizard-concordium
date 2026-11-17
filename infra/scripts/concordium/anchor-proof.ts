@@ -3,7 +3,7 @@
  * Anchor a decision set on-chain and prove membership in it.
  *
  * This is the audit half of the submission, driven from a file instead of the
- * database so it can be demonstrated without deploying Aurora. It uses the same
+ * database so it can be demonstrated without deploying the database. It uses the same
  * shared modules the Lambdas use — the root, the leaf mapping and the proof
  * verification are not reimplemented here.
  *

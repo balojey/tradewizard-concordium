@@ -772,7 +772,8 @@ deploy_down() {
     log_info "No RDS instance '$db_instance' found - skipping"
   fi
 
-  # Also handle legacy Aurora cluster if it exists
+  # Pre-RDS deployments used an Aurora cluster; clean it up if this environment
+  # still has one. New deployments never create it.
   local aurora_cluster="tw-${ENV}${NS_SUFFIX}-aurora-postgres"
   if aws rds describe-db-clusters --db-cluster-identifier "$aurora_cluster" --region "$REGION" &>/dev/null 2>&1; then
     log_info "Disabling deletion protection on Aurora cluster $aurora_cluster"

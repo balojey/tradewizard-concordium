@@ -1,3 +1,9 @@
+> **Historical note.** This article describes an earlier build that ran on
+> Aurora Serverless v2. The current infrastructure uses a single RDS PostgreSQL
+> instance (`db.t4g.micro`, single-AZ, 20 GB) - see `lib/database-stack.ts` for the
+> reasoning and the cost comparison. The application logic described below is
+> unchanged; only the database engine choice differs.
+
 # Building a Multi-Agent Trading Intelligence System on AWS with Strands Agents SDK, Amazon Bedrock, Aurora PostgreSQL, and DynamoDB
 
 **How we orchestrate 14 specialized AI agents across 7 foundation models in a single Lambda function - with Aurora Serverless v2 as the durable brain (agent memory, performance scoring, closed-loop learning) and DynamoDB as the speed layer (dedup cache, WebSocket connections, rate limiting, distributed locks).**

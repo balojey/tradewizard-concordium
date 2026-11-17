@@ -15,7 +15,7 @@ This is an honest submission in the middle of its build window, and the distinct
 | **Verified today** | Registry MCP (41 tools) and REST verification read/written against live testnet; agent card generation and hashing; the payload → signed-transaction pipeline against a real chain nonce; 950 passing tests across the backend |
 | **Executed on chain** | Agent token `1224` (`JyP9XfKVsCUMaaEsDtyoS`) registered on Concordium testnet by an identity-backed account, card hash pinned, `badge_valid: true` on all 15 checks, and a `eip155:137` Polymarket signer key bound via CIS-8 and attached to the token |
 | **Executed on chain** | A 5-decision epoch anchored on token `1224` (`529d7245…1504`); the root reads back byte-identical and an inclusion proof recomputes to it; editing a decision breaks the rebuild |
-| **Implemented, not yet deployed** | The Aurora-backed proof endpoint and the 6-hourly anchoring job — built and tested, awaiting `deploy.sh up dev` |
+| **Implemented, not yet deployed** | The database-backed proof endpoint and the 6-hourly anchoring job — built and tested, awaiting `deploy.sh up dev` |
 | **Not built** | x402 payments. Designed, costed, deliberately deferred behind the two halves that make up the actual claim |
 | **Why the gap** | Minting and anchoring are owner-authorised on CIS-8004. Our service holds no keys by design, so the last hop is the operator's wallet, not our Lambda. We consider that a feature and explain it below |
 
@@ -64,7 +64,7 @@ The badge means **accountable, not endorsed**. It says a verified human can be i
 
 ### 2. An audit trail that survives not trusting us
 
-The agent's decisions live in Aurora. Aurora is authoritative, but it is ours: a subscriber has to trust us not to edit it. So each epoch of decisions is hashed into a Merkle tree, and only the root is written on-chain, as registry metadata on the agent NFT (`decisionRoot:<epoch>`).
+The agent's decisions live in RDS. the database is authoritative, but it is ours: a subscriber has to trust us not to edit it. So each epoch of decisions is hashed into a Merkle tree, and only the root is written on-chain, as registry metadata on the agent NFT (`decisionRoot:<epoch>`).
 
 A subscriber then asks for an inclusion proof for their own trade and recomputes the root themselves, against the value committed on-chain. Nothing per-trade is published — the leaf commits to the decision, and only the root goes to chain.
 
@@ -137,4 +137,4 @@ What Concordium gives that the EVM does not: identity is enforced at account cre
 
 ## Built with
 
-TypeScript · AWS CDK · Lambda · Aurora PostgreSQL (Serverless v2) · DynamoDB · Next.js 16 · Strands Agents SDK · Amazon Bedrock / Nebius Token Factory · Concordium CIS-8004 + CIS-8 · A2A Agent Cards · MCP
+TypeScript · AWS CDK · Lambda · RDS PostgreSQL · DynamoDB · Next.js 16 · Strands Agents SDK · Amazon Bedrock / Nebius Token Factory · Concordium CIS-8004 + CIS-8 · A2A Agent Cards · MCP
