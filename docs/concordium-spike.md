@@ -112,6 +112,8 @@ Everything below is real code with tests, and needs no Chain account to run or v
 | `GET /concordium/agents/{id}/card` | **none** | serve the stored card byte-for-byte |
 | `POST /concordium/agents/{id}/mint` | Cognito | record token id/address/tx hash after the CLI write |
 | `POST /concordium/agents/{id}/verify` | Cognito | live `check_badge`, cache the result, return the verdict |
+| `GET /concordium/agents/{id}/anchors` | Cognito | anchored epochs, flagging those still awaiting a signature |
+| `GET /concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}` | Cognito | inclusion proof for one decision |
 
 Verified in the synthesized template: the card `GET` is the only unauthenticated route, every mutation is `COGNITO_USER_POOLS`, and the card base URL is derived from the REST API id so the Lambda never depends on the stage deployment.
 
@@ -123,6 +125,22 @@ Two deliberate refusals in the write path, both learned from the sample of live 
 The card route sets `Cache-Control: no-store`: verification re-fetches that URL and compares hashes, so a cached copy would produce a false mismatch after any edit.
 
 Minting stays an operator action (`scripts/concordium/agent.mjs`) because the registry holds no keys; the API records the result rather than performing it.
+
+## Proof endpoint (landed)
+
+`GET /concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}` — the part where a subscriber stops trusting us.
+
+It rebuilds the anchored epoch from the same rows, in the same order, and **refuses to answer if the rebuild does not reproduce the anchored root** (`409 epoch_not_reproducible`). That refusal is the point of the whole design: if anyone edits or deletes a decision after it was anchored, proofs stop being served rather than quietly verifying against something else. Pruning a row is no longer a silent edit; it is a detectable event.
+
+Ordering is deterministic on purpose — `ORDER BY created_at, id` in both the staging query and the rebuild — because Postgres does not guarantee a stable order for equal timestamps, and two decisions can share a millisecond.
+
+The response carries the leaf preimage, the proof path with its index and leaf count, the anchored root, and an `onChain` block comparing that root with what the registry actually returned via `get_metadata`. Three states, deliberately distinct:
+
+- `onChain: null` — the anchor is staged and awaiting the operator's signature; nothing is committed yet, and that is not corruption.
+- `matches: true` — the value committed on-chain equals the anchor we rebuilt.
+- `matches: false` or `valueHex: null` — a real discrepancy, surfaced rather than smoothed over.
+
+The staged `payload_hex` is never returned; the list endpoint exposes only `pendingSignature`.
 
 ## Anchoring job (landed)
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { anchorMetadataKey, runAnchorJob, toAnchorableDecision } from './handler';
+import { anchorMetadataKey, runAnchorJob } from './handler';
+import { toAnchorableDecision } from '../shared/concordium/decision-row';
 import { computeDecisionRoot } from '../shared/concordium/decision-root';
 import type {
   AnchorableAgent,
@@ -57,6 +58,16 @@ function memoryAnchors(options: {
     },
     async recordAnchorTx(anchorId, txHash) {
       tx.push({ anchorId, txHash });
+    },
+    // Not exercised by the job; the proof routes live in concordium-agent.
+    async listAnchorsForAgent() {
+      return [];
+    },
+    async getAnchorForAgent() {
+      return null;
+    },
+    async listDecisionsInEpoch() {
+      return [];
     },
   };
 

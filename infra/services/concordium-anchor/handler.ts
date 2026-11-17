@@ -23,10 +23,10 @@ import {
   createPgAnchorRepository,
   type AnchorableAgent,
   type ConcordiumAnchorRepository,
-  type DecisionRowSource,
 } from '../shared/concordium-db';
 import { createAgentRegistryClient, type AgentRegistryClient } from '../shared/concordium/mcp';
-import { computeDecisionRoot, DECISION_LEAF_VERSION, type AnchorableDecision } from '../shared/concordium/decision-root';
+import { computeDecisionRoot, DECISION_LEAF_VERSION } from '../shared/concordium/decision-root';
+import { toAnchorableDecision } from '../shared/concordium/decision-row';
 
 /** Registry metadata keys are capped at 64 characters. */
 const METADATA_KEY_PREFIX = 'decisionRoot:';
@@ -68,24 +68,6 @@ export interface AnchorJobResult {
  */
 export function anchorMetadataKey(epochEnd: string): string {
   return `${METADATA_KEY_PREFIX}${epochEnd.replace(/[-:]/g, '')}`.slice(0, 64);
-}
-
-/** Map a decision row onto the fields covered by the epoch root. */
-export function toAnchorableDecision(row: DecisionRowSource): AnchorableDecision {
-  return {
-    id: row.id,
-    sessionId: row.session_id,
-    analysisResultId: row.analysis_result_id,
-    action: row.action,
-    edgeMet: row.edge_met,
-    alignmentMet: row.alignment_met,
-    // NUMERIC arrives as text unless the query casts it; accept both.
-    convictionScore: row.conviction_score === null ? null : Number(row.conviction_score),
-    positionDirection: row.position_direction,
-    reasoning: row.reasoning,
-    skipReason: row.skip_reason,
-    createdAt: row.created_at,
-  };
 }
 
 async function anchorAgent(

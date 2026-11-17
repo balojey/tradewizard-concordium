@@ -208,6 +208,23 @@ export interface DecisionRowSource {
   created_at: string;
 }
 
+export interface AnchorRow {
+  id: string;
+  agent_id: string;
+  epoch_start: string;
+  epoch_end: string;
+  /** INTEGER — a JS number, unlike BIGINT columns which arrive as text. */
+  decision_count: number;
+  root_hash: string;
+  leaf_version: number;
+  metadata_key: string | null;
+  /** Sign-ready `build_set_metadata` payload, staged for the operator. */
+  payload_hex: string | null;
+  tx_hash: string | null;
+  anchored_at: string | null;
+  created_at: string;
+}
+
 export interface StageAnchorInput {
   agentId: string;
   epochStart: string;
@@ -227,6 +244,20 @@ export interface ConcordiumAnchorRepository {
   /** Returns the new anchor id, or null when this epoch is already staged. */
   stageAnchor(input: StageAnchorInput): Promise<string | null>;
   recordAnchorTx(anchorId: string, txHash: string): Promise<void>;
+  /** Anchors for one agent, newest epoch first. */
+  listAnchorsForAgent(userId: string, agentId: string): Promise<AnchorRow[]>;
+  /** One anchor, only if the agent belongs to this user. */
+  getAnchorForAgent(userId: string, agentId: string, anchorId: string): Promise<AnchorRow | null>;
+  /**
+   * The exact decision set of an epoch. `limit` must be the anchored
+   * `decision_count` so the rebuild cannot silently include later rows.
+   */
+  listDecisionsInEpoch(
+    userId: string,
+    epochStart: string,
+    epochEnd: string,
+    limit: number,
+  ): Promise<DecisionRowSource[]>;
 }
 
 /**
@@ -279,7 +310,7 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
             WHERE s.user_id = $1
               AND ($2::timestamptz IS NULL OR d.created_at > $2::timestamptz)
-            ORDER BY d.created_at ASC
+            ORDER BY d.created_at ASC, d.id ASC
             LIMIT $3`,
           [userId, since, limit],
         );
@@ -317,6 +348,52 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
           `UPDATE concordium_audit_anchors SET tx_hash = $2, anchored_at = now() WHERE id = $1`,
           [anchorId, txHash],
         );
+      });
+    },
+
+    async listAnchorsForAgent(userId, agentId) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<AnchorRow>(
+          `SELECT an.*
+             FROM concordium_audit_anchors an
+             JOIN concordium_agents a ON a.id = an.agent_id
+            WHERE a.user_id = $1 AND an.agent_id = $2
+            ORDER BY an.epoch_end DESC
+            LIMIT 50`,
+          [userId, agentId],
+        );
+        return rows;
+      });
+    },
+
+    async getAnchorForAgent(userId, agentId, anchorId) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<AnchorRow>(
+          `SELECT an.*
+             FROM concordium_audit_anchors an
+             JOIN concordium_agents a ON a.id = an.agent_id
+            WHERE a.user_id = $1 AND an.agent_id = $2 AND an.id = $3
+            LIMIT 1`,
+          [userId, agentId, anchorId],
+        );
+        return rows[0] ?? null;
+      });
+    },
+
+    async listDecisionsInEpoch(userId, epochStart, epochEnd, limit) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<DecisionRowSource>(
+          `SELECT ${DECISION_SELECT}
+             FROM portfolio_manager_decisions d
+             JOIN portfolio_manager_sessions s ON s.id = d.session_id
+            WHERE s.user_id = $1
+              AND d.created_at >= $2::timestamptz
+              AND d.created_at <= $3::timestamptz
+            ORDER BY d.created_at ASC, d.id ASC
+            LIMIT $4`,
+          [userId, epochStart, epochEnd, limit],
+        );
+        return rows;
       });
     },
   };

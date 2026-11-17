@@ -10,6 +10,9 @@
  *   GET  /concordium/agents/{id}/card      → serve the card verbatim (public, unauthenticated)
  *   POST /concordium/agents/{id}/mint      → record the minted token after the on-chain write
  *   POST /concordium/agents/{id}/verify    → re-check the badge against the registry
+ *   GET  /concordium/agents/{id}/anchors   → anchored epochs for the agent
+ *   GET  /concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}
+ *                                          → inclusion proof for one decision
  *
  * Why the split: the registry holds no keys, so minting is an operator action
  * driven by `infra/scripts/concordium/agent.mjs`. This API owns the state around
@@ -28,13 +31,23 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import { getUserIdByCognitoSub } from '../shared/db';
 import {
+  createPgAnchorRepository,
   createPgRepository,
+  type AnchorRow,
   type ConcordiumAgentRepository,
   type ConcordiumAgentRow,
+  type ConcordiumAnchorRepository,
 } from '../shared/concordium-db';
 import { createAgentRegistryClient, type AgentRegistryClient } from '../shared/concordium/mcp';
 import { assessBadge } from '../shared/concordium/badge';
 import { assertCardHash, isPubliclyHostableUri } from '../shared/concordium/agent-card';
+import {
+  buildInclusionProof,
+  computeDecisionRoot,
+  DECISION_LEAF_VERSION,
+  verifyInclusionProof,
+} from '../shared/concordium/decision-root';
+import { toAnchorableDecision } from '../shared/concordium/decision-row';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -51,6 +64,7 @@ const EXTERNAL_KEY_LENGTHS = new Set([66, 130]);
 
 export interface ConcordiumAgentDeps {
   repo: ConcordiumAgentRepository;
+  anchors: ConcordiumAnchorRepository;
   registry: AgentRegistryClient;
   resolveUserId: (cognitoSub: string) => Promise<string | null>;
   /** Base URL the public card route resolves to, used to tell the operator what to pin. */
@@ -137,6 +151,43 @@ function toApiAgent(row: ConcordiumAgentRow) {
 function cardUrlFor(deps: ConcordiumAgentDeps, agentId: string): string | undefined {
   if (!deps.publicBaseUrl) return undefined;
   return `${deps.publicBaseUrl.replace(/\/+$/, '')}/concordium/agents/${agentId}/card`;
+}
+
+
+/** External shape of an anchor. `payload_hex` stays internal: it is a signed payload, not data. */
+function toApiAnchor(row: AnchorRow) {
+  return {
+    id: row.id,
+    epochStart: row.epoch_start,
+    epochEnd: row.epoch_end,
+    decisionCount: row.decision_count,
+    rootHash: row.root_hash,
+    leafVersion: row.leaf_version,
+    metadataKey: row.metadata_key,
+    txHash: row.tx_hash,
+    anchoredAt: row.anchored_at,
+    createdAt: row.created_at,
+    /** Staged but not yet submitted by the operator. */
+    pendingSignature: row.payload_hex !== null && row.tx_hash === null,
+  };
+}
+
+/**
+ * Pull a 32-byte hex value out of whatever shape `get_metadata` returns. The
+ * tool answers with `{ value_hex, value_text }` today, but a shape change must
+ * degrade to "unreadable", never to "matches".
+ */
+function readMetadataHex(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  for (const key of ['value_hex', 'valueHex', 'hex', 'value']) {
+    const raw = record[key];
+    if (typeof raw === 'string') {
+      const candidate = raw.replace(/^0x/i, '').toLowerCase();
+      if (/^[0-9a-f]{64}$/.test(candidate)) return candidate;
+    }
+  }
+  return null;
 }
 
 export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler {
@@ -320,6 +371,95 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
     });
   }
 
+
+  async function listAnchors(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const userId = await authenticatedUserId(event);
+    const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
+    const anchors = await deps.anchors.listAnchorsForAgent(userId, agent.id);
+    return respond(200, { anchors: anchors.map(toApiAnchor) });
+  }
+
+  /**
+   * Inclusion proof for one decision in one anchored epoch.
+   *
+   * The epoch is rebuilt from the same rows the anchor was computed over, in the
+   * same order, and the rebuild **must** reproduce the anchored root. If it does
+   * not, the log changed after it was anchored — which is precisely the event
+   * this whole design exists to expose — and we refuse to hand out a proof that
+   * would silently verify against something else.
+   */
+  async function decisionProof(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const userId = await authenticatedUserId(event);
+    const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
+    const anchorId = event.pathParameters?.anchorId;
+    const decisionId = event.pathParameters?.decisionId;
+    if (!anchorId || !decisionId) {
+      throw new HttpError(400, '`anchorId` and `decisionId` are required', 'missing_params');
+    }
+
+    const anchor = await deps.anchors.getAnchorForAgent(userId, agent.id, anchorId);
+    if (!anchor) throw new HttpError(404, 'Anchor not found', 'anchor_not_found');
+
+    const rows = await deps.anchors.listDecisionsInEpoch(
+      userId,
+      anchor.epoch_start,
+      anchor.epoch_end,
+      anchor.decision_count,
+    );
+    const decisions = rows.map(toAnchorableDecision);
+
+    const index = decisions.findIndex((decision) => decision.id === decisionId);
+    if (index < 0) {
+      throw new HttpError(404, 'Decision is not part of this epoch', 'decision_not_in_epoch');
+    }
+
+    let rebuiltRoot: string;
+    try {
+      rebuiltRoot = computeDecisionRoot(decisions);
+    } catch {
+      throw new HttpError(409, 'Epoch cannot be rebuilt from the stored decisions', 'epoch_not_reproducible');
+    }
+    if (rebuiltRoot !== anchor.root_hash) {
+      console.error(
+        `Anchor ${anchor.id} no longer reproduces: rebuilt ${rebuiltRoot}, anchored ${anchor.root_hash}`,
+      );
+      throw new HttpError(409, 'Epoch no longer reproduces its anchored root', 'epoch_not_reproducible');
+    }
+
+    const proof = buildInclusionProof(decisions, index);
+    const verified = verifyInclusionProof(proof, anchor.root_hash);
+
+    // What is actually committed on-chain, once the operator has submitted the
+    // staged payload. Absent before that, and absence is not corruption.
+    let onChain: { key: string; valueHex: string | null; matches: boolean } | null = null;
+    if (anchor.metadata_key && anchor.tx_hash && agent.token_id) {
+      const raw = await deps.registry
+        .callTool('get_metadata', { token_id: agent.token_id, key: anchor.metadata_key })
+        .catch((error: unknown) => {
+          console.error(`On-chain metadata read failed for anchor ${anchor.id}:`, error);
+          return null;
+        });
+      const valueHex = readMetadataHex(raw);
+      onChain = { key: anchor.metadata_key, valueHex, matches: valueHex === anchor.root_hash };
+    }
+
+    return respond(200, {
+      anchor: toApiAnchor(anchor),
+      decision: decisions[index],
+      leafVersion: DECISION_LEAF_VERSION,
+      proof,
+      rootHash: anchor.root_hash,
+      /** The proof recomputes to the anchored root. */
+      verified,
+      onChain,
+      howToVerify: [
+        'Rebuild the leaf from `decision` and `leafVersion` with the documented canonical JSON form.',
+        'Recompute the root by hashing each pair of `proof.path` in order, using `proof.index` to decide the side.',
+        'Compare the result with `proof` → `rootHash`, and with the on-chain value at `anchor.metadataKey`.',
+      ],
+    });
+  }
+
   return async (event) => {
     if (event.httpMethod === 'OPTIONS') return respond(200, {});
 
@@ -336,6 +476,10 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       if (route === '/concordium/agents/{id}/card' && method === 'POST') return await putCard(event);
       if (route === '/concordium/agents/{id}/mint' && method === 'POST') return await recordMint(event);
       if (route === '/concordium/agents/{id}/verify' && method === 'POST') return await verifyAgent(event);
+      if (route === '/concordium/agents/{id}/anchors' && method === 'GET') return await listAnchors(event);
+      if (route === '/concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}' && method === 'GET') {
+        return await decisionProof(event);
+      }
       return respond(404, { error: 'Not found', route, method });
     } catch (error) {
       if (error instanceof HttpError) {
@@ -349,6 +493,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
 
 export const handler: APIGatewayProxyHandler = createHandler({
   repo: createPgRepository(),
+  anchors: createPgAnchorRepository(),
   registry: createAgentRegistryClient(),
   resolveUserId: getUserIdByCognitoSub,
   publicBaseUrl: process.env.CONCORDIUM_CARD_BASE_URL,

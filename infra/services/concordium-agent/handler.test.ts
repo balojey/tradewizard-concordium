@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { createHandler, type ConcordiumAgentDeps } from './handler';
+import { computeDecisionRoot } from '../shared/concordium/decision-root';
+import { toAnchorableDecision } from '../shared/concordium/decision-row';
 import type { AgentRegistryClient, BadgeVerdict } from '../shared/concordium/mcp';
 import type {
+  AnchorRow,
   BadgeTrust,
   ConcordiumAgentRepository,
   ConcordiumAgentRow,
+  ConcordiumAnchorRepository,
   CreatePendingAgentInput,
+  DecisionRowSource,
+  StageAnchorInput,
 } from '../shared/concordium-db';
 
 const ACCOUNT = '3dt3UMPzRASZndjmKpSWgCP2HhmoxZrgs8FDPtZjNHZzj13hhB';
@@ -80,6 +86,34 @@ function memoryRepo(): ConcordiumAgentRepository & { rows: Map<string, Concordiu
   };
 }
 
+/** In-memory anchor store, backed by whatever the test seeds. */
+function memoryAnchors(seed: { anchors?: AnchorRow[]; decisions?: DecisionRowSource[] } = {}) {
+  const anchors = seed.anchors ?? [];
+  const decisions = seed.decisions ?? [];
+  const repo: ConcordiumAnchorRepository = {
+    async listAnchorableAgents() {
+      return [];
+    },
+    async listDecisionsSince() {
+      return [];
+    },
+    async stageAnchor(_input: StageAnchorInput) {
+      return null;
+    },
+    async recordAnchorTx() {},
+    async listAnchorsForAgent(_userId, agentId) {
+      return anchors.filter((anchor) => anchor.agent_id === agentId);
+    },
+    async getAnchorForAgent(_userId, agentId, anchorId) {
+      return anchors.find((anchor) => anchor.id === anchorId && anchor.agent_id === agentId) ?? null;
+    },
+    async listDecisionsInEpoch(_userId, _start, _end, limit) {
+      return decisions.slice(0, limit);
+    },
+  };
+  return { repo, anchors, decisions };
+}
+
 const VALID_VERDICT: BadgeVerdict = {
   token_address: 'JyP9X',
   on_chain: { owner_account: OTHER_ACCOUNT, status: 'Active' },
@@ -88,11 +122,16 @@ const VALID_VERDICT: BadgeVerdict = {
   checks: { hash_matches_on_chain: true },
 };
 
-function makeDeps(overrides: Partial<ConcordiumAgentDeps> = {}) {
+function makeDeps(
+  overrides: Partial<Omit<ConcordiumAgentDeps, 'anchors'>> = {},
+  anchorSeed: { anchors?: AnchorRow[]; decisions?: DecisionRowSource[] } = {},
+) {
   const repo = memoryRepo();
+  const anchorStore = memoryAnchors(anchorSeed);
   const checks: string[] = [];
   const deps: ConcordiumAgentDeps = {
     repo,
+    anchors: anchorStore.repo,
     publicBaseUrl: 'https://api.test/',
     resolveUserId: async (sub: string) => (sub === 'sub-known' ? 'user-1' : null),
     registry: {
@@ -106,7 +145,7 @@ function makeDeps(overrides: Partial<ConcordiumAgentDeps> = {}) {
     },
     ...overrides,
   };
-  return { deps, repo, checks };
+  return { deps, repo, checks, anchors: anchorStore };
 }
 
 /** Invoke the handler with the deps under test and guarantee a result. */
@@ -528,5 +567,240 @@ describe('POST /concordium/agents/{id}/verify', () => {
     const result = await run(deps)(verify(id), {} as never, () => {});
     expect(result).toMatchObject({ statusCode: 502 });
     expect(parse(result).code).toBe('registry_unavailable');
+  });
+});
+
+describe('anchors and inclusion proofs', () => {
+  const DECISIONS: DecisionRowSource[] = [
+    {
+      id: 'decision-1',
+      session_id: 'session-1',
+      analysis_result_id: 'analysis-1',
+      action: 'enter',
+      edge_met: true,
+      alignment_met: true,
+      conviction_score: 0.71,
+      position_direction: 'YES',
+      reasoning: 'edge above threshold',
+      skip_reason: null,
+      created_at: '2026-11-16T09:00:00.000Z',
+    },
+    {
+      id: 'decision-2',
+      session_id: 'session-1',
+      analysis_result_id: 'analysis-2',
+      action: 'skip',
+      edge_met: false,
+      alignment_met: false,
+      conviction_score: 0.22,
+      position_direction: null,
+      reasoning: 'alignment failed',
+      skip_reason: 'alignment below threshold',
+      created_at: '2026-11-16T10:00:00.000Z',
+    },
+    {
+      id: 'decision-3',
+      session_id: 'session-2',
+      analysis_result_id: 'analysis-3',
+      action: 'exit',
+      edge_met: true,
+      alignment_met: true,
+      conviction_score: 0.64,
+      position_direction: 'YES',
+      reasoning: 'take profit hit',
+      skip_reason: null,
+      created_at: '2026-11-16T11:00:00.000Z',
+    },
+  ];
+
+  function anchorFor(agentId: string, overrides: Partial<AnchorRow> = {}): AnchorRow {
+    return {
+      id: 'anchor-1',
+      agent_id: agentId,
+      epoch_start: '2026-11-16T09:00:00.000Z',
+      epoch_end: '2026-11-16T11:00:00.000Z',
+      decision_count: DECISIONS.length,
+      root_hash: computeDecisionRoot(DECISIONS.map(toAnchorableDecision)),
+      leaf_version: 1,
+      metadata_key: 'decisionRoot:20261116T110000.000Z',
+      payload_hex: 'abcd',
+      tx_hash: null,
+      anchored_at: null,
+      created_at: '2026-11-16T12:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  /** Minted agent in a store the caller keeps, so anchors can point at its real id. */
+  async function setup(overrides: Partial<Omit<ConcordiumAgentDeps, 'anchors'>> = {}) {
+    const store = makeDeps(overrides);
+    const created = await run(store.deps)(
+      event({
+        httpMethod: 'POST',
+        resource: '/concordium/agents',
+        body: body({ concordiumAccount: ACCOUNT }),
+      }),
+    );
+    const id = parse(created).agent.id as string;
+    const row = store.repo.rows.get(id)!;
+    row.token_id = '1209';
+    row.token_address = OTHER_ACCOUNT;
+    return { ...store, id };
+  }
+
+  function proofEvent(id: string, anchorId = 'anchor-1', decisionId = 'decision-1', sub: string | null = 'sub-known') {
+    return event({
+      resource: '/concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}',
+      pathParameters: { id, anchorId, decisionId },
+      sub,
+    });
+  }
+
+  it('requires authentication', async () => {
+    const s = await setup();
+    s.anchors.anchors.push(anchorFor(s.id));
+    s.anchors.decisions.push(...DECISIONS);
+
+    const result = await run(s.deps)(proofEvent(s.id, 'anchor-1', 'decision-1', null));
+    expect(result.statusCode).toBe(401);
+  });
+
+  it('404s an anchor that does not belong to the caller', async () => {
+    const s = await setup();
+    const result = await run(s.deps)(proofEvent(s.id, 'anchor-missing'));
+    expect(result.statusCode).toBe(404);
+    expect(parse(result).code).toBe('anchor_not_found');
+  });
+
+  it('returns a proof that recomputes to the anchored root', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id);
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-2'));
+    expect(result.statusCode).toBe(200);
+
+    const payload = parse(result);
+    expect(payload.verified).toBe(true);
+    expect(payload.rootHash).toBe(anchor.root_hash);
+    expect(payload.proof.index).toBe(1);
+    expect(payload.proof.size).toBe(3);
+    expect(payload.proof.path.length).toBeGreaterThan(0);
+    expect(payload.decision.id).toBe('decision-2');
+    expect(payload.leafVersion).toBe(1);
+    // Nothing anchored on-chain yet, so there is nothing to compare against.
+    expect(payload.onChain).toBeNull();
+    expect(payload.howToVerify).toHaveLength(3);
+  });
+
+  it('refuses to serve a proof when the epoch no longer reproduces its root', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id);
+    s.anchors.anchors.push(anchor);
+    // Someone edited a decision's reasoning after it was anchored.
+    s.anchors.decisions.push(
+      ...DECISIONS.map((row) => (row.id === 'decision-3' ? { ...row, reasoning: 'rewritten after the fact' } : row)),
+    );
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('epoch_not_reproducible');
+  });
+
+  it('404s a decision from a different epoch', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id);
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-from-elsewhere'));
+    expect(result.statusCode).toBe(404);
+    expect(parse(result).code).toBe('decision_not_in_epoch');
+  });
+
+  it('compares the anchored root with the value committed on-chain', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id, { tx_hash: 'ab'.repeat(32) });
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    const seen: Array<{ name: string; args: Record<string, unknown> }> = [];
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async (name: string, args: Record<string, unknown>) => {
+        seen.push({ name, args });
+        return { value_hex: anchor.root_hash };
+      }) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).onChain).toEqual({ key: anchor.metadata_key, valueHex: anchor.root_hash, matches: true });
+    expect(seen[0]).toMatchObject({ name: 'get_metadata', args: { token_id: '1209', key: anchor.metadata_key } });
+  });
+
+  it('reports a mismatch when the on-chain value differs', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id, { tx_hash: 'ab'.repeat(32) });
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async () => ({ value_hex: 'ff'.repeat(32) })) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(parse(result).onChain.matches).toBe(false);
+    // The proof itself is still internally consistent.
+    expect(parse(result).verified).toBe(true);
+  });
+
+  it('does not call the registry for an anchor that is still awaiting signature', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id);
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    const seen: string[] = [];
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async (name: string) => {
+        seen.push(name);
+        return {};
+      }) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(seen).toEqual([]);
+  });
+
+  it('lists anchors and flags the ones still awaiting a signature', async () => {
+    const s = await setup();
+    const staged = anchorFor(s.id);
+    const submitted = anchorFor(s.id, {
+      id: 'anchor-2',
+      tx_hash: 'cd'.repeat(32),
+      payload_hex: null,
+      anchored_at: '2026-11-16T13:00:00.000Z',
+    });
+    s.anchors.anchors.push(staged, submitted);
+
+    const result = await run(s.deps)(event({ resource: '/concordium/agents/{id}/anchors', pathParameters: { id: s.id } }));
+
+    expect(result.statusCode).toBe(200);
+    const payload = parse(result);
+    expect(payload.anchors).toHaveLength(2);
+    expect(payload.anchors[0]).toMatchObject({ id: 'anchor-1', pendingSignature: true });
+    expect(payload.anchors[1]).toMatchObject({ id: 'anchor-2', pendingSignature: false, txHash: 'cd'.repeat(32) });
+    // The sign-ready payload itself never leaves the server.
+    expect(payload.anchors[0].payloadHex).toBeUndefined();
   });
 });
