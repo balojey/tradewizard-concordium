@@ -472,6 +472,27 @@ describe('POST /concordium/agents/{id}/mint', () => {
     });
   });
 
+  it('accepts a real CIS-2 token address, which is far shorter than an account', async () => {
+    // Regression: the mint route validated token addresses with the 50-character
+    // account regex, so every genuine token address was rejected.
+    const { deps, repo } = await agentWithCard();
+    const id = [...repo.rows.keys()][0];
+    const result = await run(deps)(
+      mint(id, { tokenId: '1224', tokenAddress: 'JyP9XfKVsCUMaaEsDtyoS', txHash: 'ab'.repeat(32) }),
+    );
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).agent.tokenAddress).toBe('JyP9XfKVsCUMaaEsDtyoS');
+  });
+
+  it('rejects a token address that is not base58', async () => {
+    const { deps, id } = await agentWithCard();
+    const result = await run(deps)(
+      mint(id, { tokenId: '1224', tokenAddress: '0xdeadbeefdeadbeef', txHash: 'ab'.repeat(32) }),
+    );
+    expect(result.statusCode).toBe(400);
+    expect(parse(result).code).toBe('invalid_token_address');
+  });
+
   it('rejects a non-decimal token id', async () => {
     const { deps, id } = await agentWithCard();
     const result = await run(deps)(
@@ -480,6 +501,35 @@ describe('POST /concordium/agents/{id}/mint', () => {
       () => {},
     );
     expect(result).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('mint conflicts', () => {
+  it('maps a unique-violation to 409 instead of 500', async () => {
+    const { deps, repo } = makeDeps();
+    const created = await run(deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents', body: body({ concordiumAccount: ACCOUNT }) }),
+    );
+    const id = parse(created).agent.id as string;
+    repo.rows.get(id)!.card_json = '{}';
+    repo.rows.get(id)!.metadata_hash_hex = 'ab'.repeat(32);
+
+    repo.recordMint = async () => {
+      const error = new Error('duplicate key value violates unique constraint') as Error & { code: string };
+      error.code = '23505';
+      throw error;
+    };
+
+    const result = await run(deps)(
+      event({
+        httpMethod: 'POST',
+        resource: '/concordium/agents/{id}/mint',
+        pathParameters: { id },
+        body: body({ tokenId: '1224', tokenAddress: 'JyP9XfKVsCUMaaEsDtyoS', txHash: 'ab'.repeat(32) }),
+      }),
+    );
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('token_already_claimed');
   });
 });
 
@@ -742,8 +792,58 @@ describe('anchors and inclusion proofs', () => {
 
     const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
     expect(result.statusCode).toBe(200);
-    expect(parse(result).onChain).toEqual({ key: anchor.metadata_key, valueHex: anchor.root_hash, matches: true });
+    expect(parse(result).onChain).toMatchObject({ key: anchor.metadata_key, valueText: anchor.root_hash, matches: true });
     expect(seen[0]).toMatchObject({ name: 'get_metadata', args: { token_id: '1209', key: anchor.metadata_key } });
+  });
+
+  it('reads the root from the UTF-8 text form the registry actually stores', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id, { tx_hash: 'ab'.repeat(32) });
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+    // value_hex is the hex of the 64-character ASCII root: 128 hex chars.
+    const storedBytes = Buffer.from(anchor.root_hash, 'utf8').toString('hex');
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async () => ({ value_hex: storedBytes, value_text: anchor.root_hash })) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(parse(result).onChain).toMatchObject({ valueText: anchor.root_hash, matches: true });
+  });
+
+  it('also reads a legacy raw 32-byte digest', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id, { tx_hash: 'ab'.repeat(32) });
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async () => ({ value_hex: anchor.root_hash })) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(parse(result).onChain).toMatchObject({ matches: true });
+  });
+
+  it('treats an unreadable value as a mismatch, never a match', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id, { tx_hash: 'ab'.repeat(32) });
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+    s.deps.registry = {
+      network: 'testnet',
+      callTool: (async () => ({ value_hex: 'not-hex' })) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+
+    const result = await run(s.deps)(proofEvent(s.id, anchor.id, 'decision-1'));
+    expect(parse(result).onChain.matches).toBe(false);
   });
 
   it('reports a mismatch when the on-chain value differs', async () => {

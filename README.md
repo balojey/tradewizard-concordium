@@ -96,6 +96,7 @@ docs/                      # Design records, hackathon assessment and spike resu
 - [`docs/concordium-testnet-setup.md`](docs/concordium-testnet-setup.md) — getting a testnet identity and account, and handing the key to the CLI
 - [`docs/concordium-polymarket-mapping.md`](docs/concordium-polymarket-mapping.md) — which Polymarket key is the agent, and why we bind the signer EOA rather than the Safe
 - [`docs/concordium-attestation.md`](docs/concordium-attestation.md) — anchoring a decision epoch on-chain and proving one trade's inclusion
+- [`docs/concordium-testing.md`](docs/concordium-testing.md) — the four test layers, what each covers, and what is still untested
 - [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
 - [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
 - [`infra/README.md`](infra/README.md) — deployment details

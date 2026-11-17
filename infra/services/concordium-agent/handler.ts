@@ -58,6 +58,12 @@ const CORS_HEADERS: Record<string, string> = {
 /** Concordium account addresses are 50 base58 characters. */
 const ACCOUNT_RE = /^[1-9A-HJ-NP-Za-km-z]{50}$/;
 /**
+ * CIS-2 token addresses are Base58Check of (contract, subindex, token_id), so
+ * they are much shorter than a 50-character account address. Canonical validity
+ * is decided by the registry during badge verification; this is a shape gate.
+ */
+const TOKEN_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{10,60}$/;
+/**
  * Path ids are UUIDs. Without this check a junk id reaches Postgres as an
  * invalid uuid literal and the error surfaces as a 500 instead of a 404.
  */
@@ -178,21 +184,34 @@ function toApiAnchor(row: AnchorRow) {
 }
 
 /**
- * Pull a 32-byte hex value out of whatever shape `get_metadata` returns. The
- * tool answers with `{ value_hex, value_text }` today, but a shape change must
- * degrade to "unreadable", never to "matches".
+ * Read the anchored root out of a `get_metadata` response.
+ *
+ * The registry stores metadata values as UTF-8 text, and the tool returns the
+ * bytes (`value_hex`, 128 hex characters for a 64-character root) alongside the
+ * decoded `value_text`. Older anchors written before the text rule hold the raw
+ * 32-byte digest instead, so both forms are accepted — anything else is
+ * "unreadable" and must never be reported as a match.
  */
-function readMetadataHex(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') return null;
+function readMetadataRoot(payload: unknown): { root: string | null; bytes: string | null } {
+  if (!payload || typeof payload !== 'object') return { root: null, bytes: null };
   const record = payload as Record<string, unknown>;
+
+  const text = typeof record.value_text === 'string' ? record.value_text.trim().toLowerCase() : null;
+  if (text && /^[0-9a-f]{64}$/.test(text)) return { root: text, bytes: null };
+
   for (const key of ['value_hex', 'valueHex', 'hex', 'value']) {
     const raw = record[key];
-    if (typeof raw === 'string') {
-      const candidate = raw.replace(/^0x/i, '').toLowerCase();
-      if (/^[0-9a-f]{64}$/.test(candidate)) return candidate;
-    }
+    if (typeof raw !== 'string') continue;
+    const hex = raw.replace(/^0x/i, '').toLowerCase();
+    if (!/^[0-9a-f]+$/.test(hex) || hex.length % 2 !== 0) continue;
+
+    const bytes = Buffer.from(hex, 'hex');
+    if (bytes.length === 32) return { root: bytes.toString('hex'), bytes: hex };
+    const decoded = bytes.toString('utf8');
+    if (/^[0-9a-f]{64}$/.test(decoded)) return { root: decoded, bytes: hex };
   }
-  return null;
+
+  return { root: null, bytes: null };
 }
 
 export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler {
@@ -339,7 +358,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
     if (!/^\d+$/.test(tokenId)) {
       throw new HttpError(400, '`tokenId` must be a decimal integer', 'invalid_token_id');
     }
-    if (!ACCOUNT_RE.test(tokenAddress)) {
+    if (!TOKEN_ADDRESS_RE.test(tokenAddress)) {
       throw new HttpError(400, '`tokenAddress` must be a CIS-2 token address', 'invalid_token_address');
     }
     if (agent.token_address && agent.token_address !== tokenAddress) {
@@ -349,7 +368,17 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       throw new HttpError(409, 'Publish the Agent Card before recording a mint', 'card_missing');
     }
 
-    const saved = await deps.repo.recordMint(agent.id, { tokenId, tokenAddress, txHash });
+    let saved: ConcordiumAgentRow;
+    try {
+      saved = await deps.repo.recordMint(agent.id, { tokenId, tokenAddress, txHash });
+    } catch (error) {
+      // One on-chain agent can only be claimed once. Postgres reports the unique
+      // index violation as 23505; without this it surfaced as a bare 500.
+      if ((error as { code?: string }).code === '23505') {
+        throw new HttpError(409, 'That token address is already recorded for another agent', 'token_already_claimed');
+      }
+      throw error;
+    }
     return respond(200, { agent: toApiAgent(saved) });
   }
 
@@ -440,7 +469,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
 
     // What is actually committed on-chain, once the operator has submitted the
     // staged payload. Absent before that, and absence is not corruption.
-    let onChain: { key: string; valueHex: string | null; matches: boolean } | null = null;
+    let onChain: { key: string; valueHex: string | null; valueText: string | null; matches: boolean } | null = null;
     if (anchor.metadata_key && anchor.tx_hash && agent.token_id) {
       const raw = await deps.registry
         .callTool('get_metadata', { token_id: agent.token_id, key: anchor.metadata_key })
@@ -448,8 +477,13 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
           console.error(`On-chain metadata read failed for anchor ${anchor.id}:`, error);
           return null;
         });
-      const valueHex = readMetadataHex(raw);
-      onChain = { key: anchor.metadata_key, valueHex, matches: valueHex === anchor.root_hash };
+      const { root, bytes } = readMetadataRoot(raw);
+      onChain = {
+        key: anchor.metadata_key,
+        valueHex: bytes,
+        valueText: root,
+        matches: root === anchor.root_hash,
+      };
     }
 
     return respond(200, {
