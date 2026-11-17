@@ -1,51 +1,53 @@
-# TradeWizard - Voiceover Script (ElevenLabs)
+# TradeWizard — demo voiceover script
 
-Plain spoken text only. Punctuation drives pacing. Em-dashes and ellipses for longer pauses.
-
----
-
-## Full Version (≈ 2:55)
-
-Prediction markets aggregate the world's information into a single number - a probability. In theory, anyone can trade them. In practice, almost nobody can trade them well.
-
-TradeWizard is the intelligence layer prediction markets have been missing. We turn Polymarket into a guided, probability-driven trading experience - backed by a multi-agent system engineered to be auditable, bounded, and willing to refuse.
-
-The analysis workflow is eleven stages, running on AWS Lambda with the Strands Agents SDK in TypeScript, on top of Amazon Bedrock and Nova 2 Lite. We start by pulling price history and related markets from the Polymarket CLOB and Gamma APIs. Then each agent loads its own prior signals from Aurora Postgres - only its own, because cross-agent history creates anchoring, and we want independent reasoners. An autonomous research agent gathers real-time context through NewsData and Serper.
-
-Then the league fires. Fourteen specialized agents run in parallel - microstructure, polling, news, sentiment, narrative, price action, and scenario. Each emits a typed signal validated through Zod schemas, with structured fallback when the model produces something unparseable.
-
-Now the part most AI trading products skip. Three deterministic, non-LLM gates sit between the agents and the user.
-
-Signal fusion - weighted aggregation across all fourteen signals, scaled by historical accuracy from a closed-loop leaderboard, with a divergence penalty when agent estimates spread too far apart.
-
-Adversarial debate - a bull thesis and a bear thesis each face five cross-examination tests. Evidence. Causality. Timing. Liquidity. Tail risk. Ten tests, structured and scored.
-
-And the consensus engine, which computes a final probability and a disagreement index. If disagreement crosses thirty percent, consensus fails and the system emits no-trade. If expected value is non-positive, no-trade. These are deterministic checks the model cannot override. No-trade is not a failure mode. It's a feature.
-
-For users who want execution, we built an autonomous Portfolio Manager under one principle. The agent decides. A separate executor validates and places the order.
-
-The Portfolio Manager's tools are read-only. It cannot place an order itself. Its output is a structured decision the Trade Executor enforces against machine-checked invariants. Stop-loss and take-profit are mandatory on every trade. Loss limits at fifty percent per session, forty across sessions. Thirty-minute cooldown after a loss exit. Token IDs resolved by outcome string, never by array index. Trade Executor and Position Guard are mutually exclusive on the same position. The kill switch fails closed.
-
-The platform is serverless and AWS-native. Lambda for compute. Aurora Postgres for durable state, scaling to half an ACU at idle. DynamoDB for the one-hour dedup cache, WebSocket connections, and rate limits. SQS FIFO for the analysis queue. SNS fan-out delivers results in parallel through WebSocket, email, push, and webhook.
-
-A market-level analysis pool dedupes execution across users. Ten thousand requests on the same popular market become one Bedrock invocation. Users only pay for results they actually receive, exactly once.
-
-Every recommendation is scored after the take-profit or stop-loss is hit. Every agent's accuracy feeds back into signal weighting. The intelligence compounds.
-
-Fourteen specialists. Three deterministic gates. One kill switch.
-
-TradeWizard. An AI hedge fund for real-world outcomes - built to know when to stay out.
+Plain spoken text only. Punctuation drives pacing. Recorded over the screen capture; total runtime under three minutes.
 
 ---
 
-## Short Version (≈ 75s)
+## Full version (≈ 2:50)
 
-Prediction markets aggregate the world's information into a single probability. Almost nobody trades them well. TradeWizard is the intelligence layer they've been missing - a multi-agent AI system running on AWS Lambda and Amazon Bedrock that explains every recommendation it makes.
+**(0:00) The problem**
 
-Fourteen specialized agents run in parallel through an eleven-stage workflow. Their signals pass through three deterministic, non-LLM gates - signal fusion, adversarial debate, and a consensus engine. If agents disagree by more than thirty percent, or expected value isn't positive, the system emits no-trade. The model can't override it.
+An AI agent is trading with someone's money right now. It reads a market, decides, and places the order. No human approves each trade. That is the point of it.
 
-For execution, an autonomous Portfolio Manager trades inside hard limits the user pre-approves. The agent decides - but a separate executor enforces. Mandatory stop-loss. Mandatory take-profit. Loss caps at fifty percent per session, forty across sessions. A kill switch that fails closed.
+But ask a simple question. Who is accountable for that decision?
 
-The whole platform is serverless. A market-level analysis pool dedupes execution across users, so cost scales with markets - not traffic.
+The trades are on-chain. The accountability isn't. Anybody can deploy an agent, and nobody on the other side can tell whether a real, identifiable human stands behind it, or whether it's a rented bot with a nice interface.
 
-Fourteen specialists. Three deterministic gates. One kill switch. TradeWizard - an AI hedge fund for real-world outcomes.
+**(0:30) What already runs**
+
+TradeWizard is a prediction-market trading platform on Polymarket. Fourteen specialised agents analyse every market in parallel. A deterministic stage fuses their signals, because we don't want a language model deciding probabilities when arithmetic can. Then an autonomous portfolio manager places real positions under risk limits it cannot argue with.
+
+And it already records why it acted. Every decision stores its action, its conviction, whether its thresholds were met, and when it declined, the reason it declined.
+
+**(1:05) What we added**
+
+So we took that agent and gave it two things.
+
+First, a verified human behind it. The operator verifies once with a Concordium identity provider. Their agent is registered on-chain, its Polymarket key is bound to that identity, and it carries the Verified by Concordium badge.
+
+Here it is being checked. One HTTP request, no SDK, no API key. The badge proves a real person is accountable and can be identified if something goes wrong. It does not mean Concordium reviewed our code. It means accountable, not endorsed. We say that in the interface too, because the distinction matters.
+
+**(1:40) The audit trail**
+
+Second, a record anyone can check.
+
+Every six hours, the agent's decisions are hashed into a Merkle root, and only the root is written on chain, as metadata on the agent itself.
+
+A subscriber asks for a proof of their own trade. They get a path, a root, and the value committed on chain, and they recompute it themselves. Nothing per trade is published. Only the root is.
+
+And here is the part I'd point at. Edit one decision in the database, after it was anchored, and ask for the proof again.
+
+The endpoint refuses. It won't serve a proof whose epoch no longer rebuilds to its anchored root. Deleting a row stops being a silent edit. It becomes a detectable event.
+
+**(2:20) Where we are**
+
+Minting and anchoring are authorised by the account owner, and our service holds no keys. That's deliberate. It means the last step is the operator's wallet, not our server, and it means the demo's final hop is still the operator's signature.
+
+Payments are next, and we deliberately left them out of this window. We'd rather show two halves that hold up than three that don't.
+
+**(2:40) Close**
+
+The trades were always public. Now the responsibility for them is too.
+
+TradeWizard. Verified humans, verified agents, and a record you don't have to take our word for.

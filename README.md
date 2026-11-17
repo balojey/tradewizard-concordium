@@ -1,244 +1,150 @@
 # TradeWizard
 
-> AI-powered prediction trading platform providing intelligent analysis and trading recommendations for real-world outcomes on Polymarket.
+> AI prediction-trading platform for Polymarket — with accountability built into the agent itself.
 
-TradeWizard transforms prediction markets from speculative guessing into guided, intelligence-driven trading. A multi-agent AI system analyzes markets from multiple perspectives to produce explainable trade recommendations with clear reasoning, catalysts, and risk scenarios.
+TradeWizard turns prediction markets from speculative guessing into guided, intelligence-driven trading. A multi-agent system analyses live markets and produces explainable recommendations, and an autonomous Portfolio Manager executes them under hard risk limits.
 
-## Components
+This repository is the **Concordium Trusted Agents Hackathon** build. It takes the agent we already run and gives it what the brief asks for: a verified human behind it, a record of what it did that anyone can check, and — next — the ability to pay and be paid on its own.
 
-| Component | Purpose | Tech Stack |
-|-----------|---------|-----------|
-| [infra/](infra/README.md) | V2 AWS-native platform (CDK, Lambda, Strands SDK) | TypeScript, AWS CDK, Lambda, RDS, DynamoDB |
-| [tradewizard-frontend/](tradewizard-frontend/README.md) | Web UI with Cognito auth, real-time delivery, subscription management | Next.js 16, React 19, Tailwind CSS 4 |
+---
 
-## Architecture (V2)
+## Why this submission fits the brief
 
-```
-User → Next.js Frontend (Cognito Auth)
-         ↓ REST API (API Gateway)
-   Analysis Request Lambda
-         ↓ Credit check → Dedup → SQS
-   Analysis Orchestrator Lambda
-         ↓ Lambda invoke (Strands SDK)
-   14 Specialized AI Agents (Bedrock default; Nebius Token Factory optional)
-         ↓
-   Results → S3 + RDS
-         ↓ SNS Fan-out
-   ┌─────────────────────────────────────┐
-   │ WebSocket Push │ Email (Resend) │ Push │ Webhook │
-   └─────────────────────────────────────┘
-         ↓
-   Real-time delivery to frontend
-```
+The hackathon brief is "add trust and accountability to the AI agents you already have", and autonomous trading is the sharpest version of the problem: our agent **spends real money on someone's behalf**, and until now a counterparty had no way to know whether a named human stood behind it or a rented farm.
 
-### Analysis Pipeline (11 Stages)
+| Brief | What we built |
+| --- | --- |
+| Prove a verified human stands behind the agent | Agent registered in the CIS-8004 registry, its Polymarket key bound through CIS-8, carrying the Verified by Concordium badge |
+| Keep a record of what it did | Every decision the agent makes is hashed into a Merkle root and pinned as registry metadata; subscribers get inclusion proofs they can recompute |
+| Pay and get paid on its own | Designed, not yet built — x402 with sponsored fees, deliberately time-boxed behind the two above |
 
-1. **Data Preparation** - Fetch live data from Polymarket CLOB + Gamma APIs
-2. **Memory Retrieval** - Load historical agent signals from RDS
-3. **Web Research** - Autonomous research via NewsData.io and Serper tools
-4. **Agent Selection** - All 14 agents activated for every market (no conditional filtering)
-5. **Parallel Intelligence Agents** - 14 agents execute in parallel via Promise.all
-6. **Signal Fusion** (deterministic) - Weighted aggregation with conflict detection
-7. **Thesis Construction** - Competing bull and bear theses
-8. **Cross-Examination** - 5 adversarial tests on both theses
-9. **Consensus Engine** (deterministic) - Weighted probability, fails if disagreement > 30%
-10. **Risk Philosophy Agents** - Aggressive, conservative, neutral position sizing
-11. **Recommendation Generation** - LONG_YES, LONG_NO, or NO_TRADE with entry/exit zones
+We did not migrate anything to Concordium. The agent keeps executing on Polygon/Polymarket; Concordium is the identity and audit anchor, which is exactly the "one agent, native to another chain" topology the registry documents.
 
-## Frontend Features (Phase 3)
+---
 
-### Authentication
-- Amazon Cognito with Magic Link custom auth flow (passwordless)
-- JWT token management with auto-refresh
-- Secure localStorage token storage with `tw_` prefix
+## What already runs (the platform)
 
-### Real-Time Delivery
-- WebSocket connection with exponential backoff reconnection (1s → 30s max)
-- Ping keepalive every 5 minutes
-- TanStack Query cache integration (new results prepend without refresh)
+- **14 specialised intelligence agents** on every market — no conditional selection, all in parallel
+- **11-stage analysis pipeline**: data preparation → memory → web research → parallel agents → deterministic signal fusion → bull/bear theses → cross-examination → deterministic consensus → risk-philosophy sizing → recommendation
+- **Autonomous Portfolio Manager** that places and exits real Polymarket positions under stop-loss, take-profit, position-size and cumulative-loss limits
+- **Real-time delivery** over WebSocket, email, push and webhook
+- **On-chain subscriptions** in USDC.e on Polygon, with credits, plans and renewals
 
-### Analysis Request
-- One-time or recurring analysis with plan-aware interval selection
-- Credit balance display with optimistic decrement
-- Handles cached (instant) and queued (async) responses
-
-### Results Viewer
-- Paginated history with infinite scroll
-- Full detail view: agent signals, bull/bear thesis, cross-examination, position sizing
-- Visual distinction between cached and fresh analyses
-- Real-time prepend from WebSocket
-
-### Subscription Management
-- Plan comparison (Free, Starter 19 USDC.e, Pro 49 USDC.e, Elite 149 USDC.e)
-- On-chain USDC.e payments from Trading Wallet (Safe) on Polygon
-- Auto-renewal via ERC-20 allowance (approve/revoke from UI)
-- Manual renewal flow for users without allowance set
-- Credit pack purchases (20 for 9 USDC.e, 50 for 19 USDC.e)
-- Subscription cancellation with period-end handling
-- Payment history with on-chain transaction links
-- Credit balance in header with optimistic updates
-
-### Notification Settings
-- Channel toggles (in-app, email, push, webhook) with plan-based restrictions
-- Quiet hours configuration (HH:MM time pickers)
-- Probability shift threshold (0.01–1.00)
-- Webhook URL validation (HTTPS required)
-
-## Prerequisites
-
-| Requirement | Used by |
-|-------------|---------|
-| Node.js 18+ | All components |
-| AWS Account | infra (CDK deployment) |
-| Platform Wallet (Polygon) | USDC.e payment receiving + renewal transferFrom |
-| Amazon Cognito User Pool | Authentication |
-
-## Getting Started
-
-### Option A: Full V2 Platform (AWS)
-
-```bash
-# 1. Deploy infrastructure (handles secrets, CDK, DB, Resend/SES email)
-cd infra
-npm install
-./deploy.sh up dev
-
-# 2. Start the frontend
-cd ../tradewizard-frontend
-npm install
-cp .env.example .env.local
-npm run dev  # http://localhost:3000
-```
-
-### Option B: Frontend only (development)
-
-```bash
-cd tradewizard-frontend
-npm install
-cp .env.example .env.local
-# Configure environment variables (see below)
-npm run dev  # http://localhost:3000
-```
-
-## Environment Variables Reference
-
-### tradewizard-frontend (.env.local)
-
-```bash
-# Cognito Auth
-NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_xxxxx
-NEXT_PUBLIC_COGNITO_CLIENT_ID=your_client_id
-NEXT_PUBLIC_AWS_REGION=us-east-1
-
-# API Gateway
-NEXT_PUBLIC_API_BASE_URL=https://your-api-id.execute-api.us-east-1.amazonaws.com/dev
-
-# WebSocket
-NEXT_PUBLIC_WS_URL=wss://your-ws-id.execute-api.us-east-1.amazonaws.com/dev
-
-# Wallet Payments
-NEXT_PUBLIC_PLATFORM_WALLET_ADDRESS=0x...
-NEXT_PUBLIC_USDC_CONTRACT_ADDRESS=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
-
-# Polymarket
-NEXT_PUBLIC_POLYMARKET_API_URL=https://clob.polymarket.com
-```
-
-### infra (.env)
-
-```bash
-# AWS
-AWS_REGION=us-east-1
-CDK_DEFAULT_ACCOUNT=your_account_id
-ENVIRONMENT=dev
-
-# Wallet (stored in Secrets Manager via deploy.sh)
-PLATFORM_WALLET_ADDRESS=0x...
-USDC_CONTRACT_ADDRESS=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
-POLYGON_RPC_URL=https://polygon-rpc.com
-SAFE_FACTORY_ADDRESS=0x...
-```
-
-## Common Commands
-
-### infra (CDK)
-
-```bash
-./deploy.sh up dev                  # Full deploy (secrets + CDK + DB + Resend/SES)
-./deploy.sh up dev --skip-db        # Skip DB migration
-./deploy.sh status dev              # Check deployment status
-./deploy.sh down dev                # Tear down
-npx cdk diff --context env=development  # Show pending changes
-```
-
-### tradewizard-frontend
-
-```bash
-npm run dev     # Start dev server (localhost:3000)
-npm run build   # Build for production
-npm run lint    # Lint check
-```
-
-## Subscription Plans
-
-| Plan | Price (USDC.e/mo) | Credits/Month | Intervals | Channels |
-|------|-------------------|---------------|-----------|----------|
-| Free | 0 | 20 | One-time only | In-app |
-| Starter | 19 | 100 | One-time, 1 day | In-app, email, push |
-| Pro | 49 | 350 | All (1h, 4h, 12h, 1d) | All channels |
-| Elite | 149 | Unlimited | All intervals | All channels |
-
-Credit packs: 20 credits for $4.99, 45 credits for $9.99, 75 credits for $14.99.
-
-### Payment Model
-
-Payments are made via on-chain USDC.e transfers on Polygon:
-- **Frontend** initiates transfers from the user's Trading Wallet (Safe) via `relayClient.execute()`
-- **Backend** verifies completed on-chain transactions (never initiates transfers from user wallets)
-- **Auto-renewal** uses ERC-20 `transferFrom` with pre-approved allowance
-- **Grace period** (3 days) if renewal fails, with retry every 24h and user notifications
-
-## Project Structure
+## What this build adds (the trust layer)
 
 ```
-tradewizard/
-├── infra/                  # V2 AWS CDK infrastructure + Lambda services
-│   ├── lib/               # CDK stacks (network, database, auth, queue, compute, etc.)
-│   ├── services/          # Lambda handlers (analysis, delivery, subscriptions, portfolio, etc.)
-│   └── sql/               # PostgreSQL schema
-├── tradewizard-frontend/   # Next.js web application
-│   ├── app/               # App Router pages (login, markets, insights, portfolio, account)
-│   ├── components/        # React components (ui, shell, markets, portfolio, subscription)
-│   ├── hooks/             # Custom hooks (useAuth, useWebSocket, usePortfolio*, etc.)
-│   ├── lib/               # Utilities (cognito-auth, api-client, websocket-client)
-│   └── providers/         # Context providers (Auth, Wallet, Query, WebSocket, Trading)
-├── docs/                   # Product and technical documentation
-└── .kiro/                  # AI assistant configuration
+                     ┌─────────────────────────────┐
+                     │  Concordium (identity)      │
+   operator  ────────▶  account · CIS-8004 agent NFT │
+   (verified human)   │  CIS-8 ← Polymarket key      │
+                     └──────────────┬──────────────┘
+                                    │  Agent Card + badge (public URL, pinned hash)
+                     ┌──────────────▼──────────────┐
+                     │  TradeWizard (execution)     │
+                     │  decisions → Merkle root     │
+                     │  root → agent metadata       │
+                     └──────────────┬──────────────┘
+                                    │  inclusion proof
+                              subscriber verifies
+```
+
+| Piece | State |
+| --- | --- |
+| Registry client, badge policy, card hashing, Merkle proofs | ✅ built, 60 unit tests |
+| `concordium_agents` / `concordium_audit_anchors` schema | ✅ built |
+| Agent registry API + public card hosting | ✅ built, 32 handler tests |
+| Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
+| Inclusion-proof endpoint | ✅ built, verified against anchored root |
+| Mint → live `badge_valid: true` | ⛔ pending: needs a funded testnet account (operator step) |
+| x402 payments | ⛔ unproven, deferred by design |
+
+Honest summary: **the identity and audit halves are implemented and tested; they have not yet been executed against a live registry entry**, because minting and anchoring require the operator's signature by design. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
+
+### How the pieces fit
+
+1. **Identity.** The operator verifies once with a Concordium identity provider and registers their agent through our MCP client; the agent's Polymarket `secp256k1` key is bound on-chain via CIS-8, so identity on Concordium resolves to execution on Polygon. The agent carries an A2A Agent Card at a public URL whose SHA-256 is pinned on-chain.
+2. **Audit.** Every Portfolio Manager decision is already recorded with its action, conviction, reasoning and skip reason. The anchoring job hashes an epoch of decisions into a Merkle root and stages a registry metadata write pinning that root. A subscriber asks for an inclusion proof for their own trade and recomputes the root themselves.
+3. **Refusal as evidence.** The proof endpoint rebuilds the epoch and **will not answer if the rebuild no longer reproduces the anchored root**. Editing or deleting a decision after the fact stops proofs rather than letting them verify against something else.
+
+The badge means *accountable*, not *endorsed* — Concordium does not review our code or behaviour, and the UI says so.
+
+---
+
+## Repository map
+
+```
+infra/                     # AWS CDK + Lambda backend (TypeScript)
+  services/                # Lambda handlers, one directory per service
+  services/shared/concordium/  # registry client, badge policy, card hashing, Merkle proofs
+  services/concordium-agent/   # agent registry API + public Agent Card hosting
+  services/concordium-anchor/  # epoch anchoring job
+  scripts/concordium/      # CLI that drives the actual on-chain writes
+  sql/001-schema.sql       # one consolidated, idempotent schema
+tradewizard-frontend/      # Next.js 16 App Router customer app
+tradewizard-admin/         # Next.js 16 App Router internal portal
+remotion/                  # Demo video composition
+docs/                      # Design records, hackathon assessment and spike results
+.kiro/                     # Specification and steering artifacts
 ```
 
 ## Documentation
 
-- [infra/README.md](infra/README.md) - AWS infrastructure and deployment guide
-- [tradewizard-frontend/README.md](tradewizard-frontend/README.md) - Frontend development guide
-- [docs/](docs/) - Product overview, architecture specs, debate protocol
+- [`docs/concordium-integration-assessment.md`](docs/concordium-integration-assessment.md) — what Concordium's registry, badge and x402 actually provide, and what each costs to integrate
+- [`docs/concordium-spike.md`](docs/concordium-spike.md) — spike results: what was proven against the live testnet, what is blocked and why
+- [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
+- [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
+- [`infra/README.md`](infra/README.md) — deployment details
+- [`.kiro/steering/`](.kiro/steering/) — authoritative architecture notes
 
-## Contributing
+## Getting started
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m 'Add my feature'`
-4. Push and open a Pull Request
+```bash
+# Backend
+cd infra
+npm install
+./deploy.sh up dev          # CDK + secrets + database migration
+npm test                    # 950 tests
+npm run synth:dev           # typecheck + synthesise without deploying
 
-Code quality requirements:
-- TypeScript strict mode
-- ESLint + Prettier
-- All infrastructure changes via CDK (never manual console changes)
-- Graceful error handling at every layer
+# Frontend
+cd ../tradewizard-frontend
+npm install
+cp .env.example .env.local
+npm run dev                 # http://localhost:3000
+```
+
+Driving the Concordium side (account required):
+
+```bash
+cd infra
+export CONCORDIUM_ACCOUNT=<your testnet account>
+export CONCORDIUM_KEY_HEX=<account key>
+node scripts/concordium/agent.mjs info
+node scripts/concordium/agent.mjs card  --name "..." --description "..." --uri https://.../agent-card.json
+node scripts/concordium/agent.mjs register --uri https://.../agent-card.json --hash <sha256> --dry-run
+node scripts/concordium/agent.mjs check   --token <token_address>
+```
+
+## Prerequisites
+
+| Requirement | Used by |
+| --- | --- |
+| Node.js 20 | all packages |
+| AWS account | `infra/` (CDK) |
+| Concordium testnet account + identity | agent registration (identity must be identity-verified) |
+| Polygon platform wallet | USDC.e subscriptions, portfolio execution |
+| Cognito user pool | authentication |
+
+## Notes
+
+- `AI_PROVIDER=bedrock` (default) or `nebius`; the switch only changes inference, never order execution.
+- All transactional email goes through `infra/services/shared/email.ts`.
+- The registry service holds no keys: every on-chain write is a sign-ready payload that the account owner signs. Our infrastructure never holds user signing keys.
 
 ## License
 
-This project is proprietary software. All rights reserved.
+Proprietary. All rights reserved.
 
 ---
 
-**Disclaimer**: TradeWizard provides AI-generated analysis for educational and informational purposes. All trading involves risk. Past performance does not guarantee future results. Please trade responsibly.
+**Disclaimer**: TradeWizard provides AI-generated analysis for educational and informational purposes. All trading involves risk. Past performance does not guarantee future results. Trade responsibly.
