@@ -107,7 +107,7 @@ docs/                      # Design records, hackathon assessment and spike resu
 # Backend
 cd infra
 npm install
-./deploy.sh up dev          # CDK + secrets + database migration
+./deploy.sh up dev          # CDK + secrets + database migration (namespaced, see below)
 npm test                    # 950 tests
 npm run synth:dev           # typecheck + synthesise without deploying
 
@@ -133,6 +133,29 @@ node scripts/concordium/agent.mjs check   --token <token_address>
 npx tsx scripts/concordium/anchor-proof.ts anchor --file ../docs/agents/example-decisions.json --token-id <token>
 npx tsx scripts/concordium/anchor-proof.ts prove  --file ../docs/agents/example-decisions.json --decision <decision id>
 ```
+
+## Deployment isolation
+
+This build deploys **alongside** the original TradeWizard environments in the
+same AWS account, without touching them. One variable does it, in `infra/.env.dev`:
+
+```bash
+DEPLOYMENT_NAMESPACE=concordium
+```
+
+Everything that has a name carries it:
+
+| | Original | This deployment |
+| --- | --- | --- |
+| CloudFormation stacks | `TradeWizard-Dev-*` | `TradeWizard-Concordium-Dev-*` |
+| Secrets, Lambdas, queues, topics, log groups | `tw-dev-*` | `tw-dev-concordium-*` |
+| CloudFormation exports | `TradeWizard-Dev-Auth:ExportsOutput…` | `TradeWizard-Concordium-Dev-Auth:ExportsOutput…` |
+| VPC | `10.0.0.0/16` | `10.2.0.0/16` |
+
+Verified by synthesising both repos and diffing: **0 shared stack names, 0 shared
+resource names**. `./deploy.sh down dev` and `wipe:dev` are namespaced too, so
+neither can reach the other deployment's data. Leave the variable set — unsetting
+it restores the original naming exactly, which would then collide.
 
 ## Prerequisites
 

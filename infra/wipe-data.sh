@@ -35,13 +35,18 @@ fi
 
 # ─── Environment Mapping ─────────────────────────────────────────────────────
 
+# A namespaced deployment (DEPLOYMENT_NAMESPACE) has its own resource prefix.
+# Without this, `wipe dev` would target the *other* deployment's data.
+NS_SLUG="$(echo "${DEPLOYMENT_NAMESPACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+NS_SUFFIX="${NS_SLUG:+-$NS_SLUG}"
+
 if [[ "$ENV" == "prod" ]]; then
-  PREFIX="tw-prod"
+  PREFIX="tw-prod${NS_SUFFIX}"
   ENV_LONG="production"
   CDK_OUTPUTS="cdk-outputs-prod.json"
   REGION="us-east-1"
 else
-  PREFIX="tw-dev"
+  PREFIX="tw-dev${NS_SUFFIX}"
   ENV_LONG="development"
   CDK_OUTPUTS="cdk-outputs-dev.json"
   REGION="us-east-1"

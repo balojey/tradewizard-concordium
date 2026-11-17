@@ -10,7 +10,7 @@ import { NotificationStack } from '../lib/notification-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 import { AdminStack } from '../lib/admin-stack';
-import { EnvironmentName, getEnvironmentConfig } from '../lib/config';
+import { EnvironmentName, getDeploymentNamespace, getEnvironmentConfig } from '../lib/config';
 
 const app = new cdk.App();
 
@@ -29,8 +29,16 @@ const env: cdk.Environment = {
 
 console.log(`\n🚀 Deploying TradeWizard infrastructure for: ${envName.toUpperCase()}\n`);
 
-// Stack naming convention: TradeWizard-{Env}-{Service}
-const stackPrefix = envName === 'production' ? 'TradeWizard-Prod' : 'TradeWizard-Dev';
+// Stack naming convention: TradeWizard-[{Namespace}-]{Env}-{Service}
+//
+// A namespaced deployment gets its own stack names, and therefore its own
+// CloudFormation exports, so it can share an account with the plain deployment.
+const deploymentNamespace = getDeploymentNamespace();
+const envSegment = envName === 'production' ? 'Prod' : 'Dev';
+const namespaceSegment = deploymentNamespace
+  ? `${deploymentNamespace.charAt(0).toUpperCase()}${deploymentNamespace.slice(1)}-`
+  : '';
+const stackPrefix = `TradeWizard-${namespaceSegment}${envSegment}`;
 
 // 1. Network (VPC, subnets, security groups)
 const networkStack = new NetworkStack(app, `${stackPrefix}-Network`, {
@@ -152,4 +160,5 @@ adminStack.addDependency(monitoringStack);
 // Tag all resources
 cdk.Tags.of(app).add('Project', 'TradeWizard');
 cdk.Tags.of(app).add('Environment', envName);
+if (deploymentNamespace) cdk.Tags.of(app).add('Deployment', deploymentNamespace);
 cdk.Tags.of(app).add('ManagedBy', 'CDK');

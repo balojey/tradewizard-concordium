@@ -38,7 +38,7 @@ export function getEnvironmentConfig(envName: EnvironmentName): EnvironmentConfi
       envName: 'development',
       account: process.env.CDK_DEFAULT_ACCOUNT || '',
       region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
-      vpcCidr: '10.0.0.0/16',
+      vpcCidr: getDeploymentNamespace() ? '10.2.0.0/16' : '10.0.0.0/16',
       rds: {
         instanceClass: 't4g.micro',
         allocatedStorage: 20,
@@ -56,7 +56,7 @@ export function getEnvironmentConfig(envName: EnvironmentName): EnvironmentConfi
       envName: 'production',
       account: process.env.CDK_DEFAULT_ACCOUNT || '',
       region: process.env.CDK_DEFAULT_REGION || 'us-east-1',
-      vpcCidr: '10.1.0.0/16',
+      vpcCidr: getDeploymentNamespace() ? '10.3.0.0/16' : '10.1.0.0/16',
       rds: {
         instanceClass: 't4g.micro',
         allocatedStorage: 20,
@@ -75,8 +75,24 @@ export function getEnvironmentConfig(envName: EnvironmentName): EnvironmentConfi
   return configs[envName];
 }
 
+/**
+ * Optional deployment namespace.
+ *
+ * Set `DEPLOYMENT_NAMESPACE` to run a second, fully independent deployment in
+ * the same account and region - e.g. a hackathon build alongside a live
+ * environment. Every resource name, stack name and CloudFormation export then
+ * carries the namespace, so the two cannot collide or overwrite each other.
+ *
+ * Unset (the default) keeps the original naming exactly, so existing
+ * deployments are unaffected.
+ */
+export function getDeploymentNamespace(): string {
+  return (process.env.DEPLOYMENT_NAMESPACE ?? '').trim().toLowerCase();
+}
+
 /** Prefix for all resource names to avoid collisions */
 export function resourceName(envName: EnvironmentName, name: string): string {
   const prefix = envName === 'production' ? 'tw-prod' : 'tw-dev';
-  return `${prefix}-${name}`;
+  const namespace = getDeploymentNamespace();
+  return namespace ? `${prefix}-${namespace}-${name}` : `${prefix}-${name}`;
 }

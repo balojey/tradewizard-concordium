@@ -142,16 +142,25 @@ fi
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-STACK_PREFIX="TradeWizard-$(echo "$ENV" | sed 's/./\U&/')"  # TradeWizard-Dev or TradeWizard-Prod
+# Optional deployment namespace. Set DEPLOYMENT_NAMESPACE (in .env.{dev|prod}) to
+# run this deployment alongside an existing one in the same account: every stack
+# and resource name then carries the namespace, and CloudFormation exports stay
+# distinct. Unset, naming is exactly as before.
+NS_SLUG="$(echo "${DEPLOYMENT_NAMESPACE:-}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+NS_SUFFIX="${NS_SLUG:+-$NS_SLUG}"                                  # -concordium
+NS_PASCAL="$(echo "$NS_SLUG" | sed 's/./\U&/')"                   # Concordium
+NS_PASCAL_SUFFIX="${NS_PASCAL:+$NS_PASCAL-}"                       # Concordium-
+
+STACK_PREFIX="TradeWizard-${NS_PASCAL_SUFFIX}$(echo "$ENV" | sed 's/./\U&/')"  # TradeWizard-[Ns-]Dev
 REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || echo "us-east-2")}"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "unknown")
 
-PLATFORM_WALLET_SECRET="tw-${ENV}-platform-wallet-key"
-MAGIC_SDK_SECRET="tw-${ENV}-magic-secret-key"
-CLOB_CREDENTIALS_SECRET="tw-${ENV}-clob-credentials"
-RESEND_API_KEY_SECRET="tw-${ENV}-resend-api-key"
-NEBIUS_API_KEY_SECRET="tw-${ENV}-nebius-api-key"
-DB_SECRET="tw-${ENV}-db-credentials"
+PLATFORM_WALLET_SECRET="tw-${ENV}${NS_SUFFIX}-platform-wallet-key"
+MAGIC_SDK_SECRET="tw-${ENV}${NS_SUFFIX}-magic-secret-key"
+CLOB_CREDENTIALS_SECRET="tw-${ENV}${NS_SUFFIX}-clob-credentials"
+RESEND_API_KEY_SECRET="tw-${ENV}${NS_SUFFIX}-resend-api-key"
+NEBIUS_API_KEY_SECRET="tw-${ENV}${NS_SUFFIX}-nebius-api-key"
+DB_SECRET="tw-${ENV}${NS_SUFFIX}-db-credentials"
 
 echo -e "\n${BOLD}TradeWizard V2 - ${ACTION^^} ${ENV^^}${NC}"
 echo -e "${CYAN}  Region:  ${REGION}${NC}"
@@ -750,7 +759,7 @@ deploy_down() {
   # ── Step 1: Disable deletion protection on RDS ────────────────────────────
   log_step "Disabling deletion protection on RDS instances"
 
-  local db_instance="tw-${ENV}-postgres"
+  local db_instance="tw-${ENV}${NS_SUFFIX}-postgres"
   if aws rds describe-db-instances --db-instance-identifier "$db_instance" --region "$REGION" &>/dev/null; then
     log_info "Disabling deletion protection on $db_instance"
     aws rds modify-db-instance \
@@ -764,7 +773,7 @@ deploy_down() {
   fi
 
   # Also handle legacy Aurora cluster if it exists
-  local aurora_cluster="tw-${ENV}-aurora-postgres"
+  local aurora_cluster="tw-${ENV}${NS_SUFFIX}-aurora-postgres"
   if aws rds describe-db-clusters --db-cluster-identifier "$aurora_cluster" --region "$REGION" &>/dev/null 2>&1; then
     log_info "Disabling deletion protection on Aurora cluster $aurora_cluster"
     aws rds modify-db-cluster \
@@ -817,7 +826,7 @@ deploy_down() {
   # ── Step 3: Clean up retained/orphaned resources ──────────────────────────
   log_step "Cleaning up retained resources (S3, DynamoDB, SQS, Log Groups)"
 
-  local prefix="tw-${ENV}"
+  local prefix="tw-${ENV}${NS_SUFFIX}"
   local account_id
   account_id=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
 

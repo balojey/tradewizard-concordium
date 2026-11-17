@@ -27,9 +27,11 @@ npm run seed:demo         # fill dev with Warden demo data (--dry-run to preview
 npm run cleanup:demo      # preview the removal; nothing is deleted
 npm run cleanup:demo:apply  # actually delete the demo data
 ```
+- `DEPLOYMENT_NAMESPACE=concordium` (in `.env.dev`) namespaces the entire deployment: stacks `TradeWizard-Concordium-Dev-*`, resources `tw-dev-concordium-*`, CloudFormation exports, and the VPC CIDR (10.2.0.0/16). That is what lets this build share the AWS account with the original `tw-dev`/`tw-prod` deployment. Keep it set; unsetting it reverts to the original names and collides. `wipe-data.sh` honours it too.
 - `deploy.sh` loads gitignored `.env.dev` / `.env.prod` (fallback `.env`); env vars there feed `lib/config.ts` and CDK. `--skip-agents` is NOT supported (only `--skip-db`); docs referencing it are wrong.
 - `down prod` requires typing the env name; dev asks for Enter.
 - Lambda handlers are `infra/services/<service>/handler.ts`, wired in `lib/compute-stack.ts`.
+- Some maintenance scripts still hardcode `tw-dev*` (e.g. `scripts/seed-admin.ts`, `scripts/lib/warden-demo.ts`, `scripts/refund-credits.ts`). They target the **other** deployment unless pointed at the namespaced resources; do not run them here without updating the names.
 
 ### tradewizard-frontend/
 ```bash
