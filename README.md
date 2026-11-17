@@ -91,6 +91,7 @@ docs/                      # Design records, hackathon assessment and spike resu
 
 - [`docs/concordium-integration-assessment.md`](docs/concordium-integration-assessment.md) — what Concordium's registry, badge and x402 actually provide, and what each costs to integrate
 - [`docs/concordium-spike.md`](docs/concordium-spike.md) — spike results: what was proven against the live testnet, what is blocked and why
+- [`docs/concordium-testnet-setup.md`](docs/concordium-testnet-setup.md) — getting a testnet identity and account, and handing the key to the CLI
 - [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
 - [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
 - [`infra/README.md`](infra/README.md) — deployment details
@@ -119,6 +120,7 @@ Driving the Concordium side (account required):
 cd infra
 export CONCORDIUM_ACCOUNT=<your testnet account>
 export CONCORDIUM_KEY_HEX=<account key>
+node scripts/concordium/derive-key.mjs --address <testnet account> --dry-run
 node scripts/concordium/agent.mjs info
 node scripts/concordium/agent.mjs card  --name "..." --description "..." --uri https://.../agent-card.json
 node scripts/concordium/agent.mjs register --uri https://.../agent-card.json --hash <sha256> --dry-run
@@ -143,7 +145,11 @@ node scripts/concordium/agent.mjs check   --token <token_address>
 
 ## License
 
-Proprietary. All rights reserved.
+MIT — see [LICENSE](LICENSE).
+
+This repository is the public hackathon snapshot. The upstream production
+repository is private and is not covered by this licence; secrets, credentials
+and customer data are not part of this snapshot.
 
 ---
 
