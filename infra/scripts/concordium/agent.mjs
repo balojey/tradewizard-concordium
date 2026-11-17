@@ -23,6 +23,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
   AccountAddress,
   CcdAmount,
@@ -183,6 +184,101 @@ const commands = {
       network: NETWORK,
       sender: ACCOUNT,
       token_id: arg('token-id'),
+    });
+    console.log(JSON.stringify(await submit(payload, { dryRun: !!arg('dry-run', false) }), null, 2));
+  },
+
+  /**
+   * Bind a Polymarket signer key to this Concordium account (CIS-8).
+   *
+   * Which key matters: Polymarket authorises orders with the *signer* key — the
+   * EOA behind a Safe/Proxy/Deposit Wallet — while the smart wallet is only the
+   * maker. A contract cannot produce a secp256k1 proof, so binding the wallet
+   * address would be unverifiable. We bind the signer and record the wallet in
+   * the card, which is the mapping a counterparty needs.
+   *
+   * In production the browser signs (Magic `personal_sign`) and the CLI receives
+   * `--signature`. `--private-key` exists for the demo and for session keys.
+   */
+  async 'bind-key'() {
+    const rawKey = arg('private-key') === true ? generatePrivateKey() : String(arg('private-key'));
+    // viem wants 0x-prefixed hex; accept either form so a key copied from a
+    // secrets manager does not need editing.
+    const privateKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
+    const account = privateKeyToAccount(privateKey);
+    const namespace = String(arg('namespace', 'eip155:137'));
+    const keyType = String(arg('key-type', 'secp256k1-uncompressed'));
+    const publicKeyHex = account.publicKey.slice(2);
+
+    console.log(`signer: ${account.address}  (${namespace}, ${keyType})`);
+
+    const canonical = await callTool('build_cis8_canonical_bytes', {
+      network: NETWORK,
+      concordium_account: ACCOUNT,
+      external_namespace: namespace,
+      external_key_namespace: namespace,
+      external_key_type: keyType,
+      external_public_key_hex: publicKeyHex,
+      proof_scheme: 'ethereum-personal-sign',
+    });
+
+    console.log(`canonical bytes: ${canonical.byte_length} bytes (prefix "${canonical.prefix_utf8}")`);
+
+    // EIP-191 personal_sign over the exact bytes: viem wraps with the
+    // `\x19Ethereum Signed Message:\n<len>` prefix, which is what the scheme means.
+    const signature = await account.signMessage({ message: { raw: `0x${canonical.bytes_hex}` } });
+
+    const payload = await callTool('build_cis8_register', {
+      network: NETWORK,
+      sender: ACCOUNT,
+      external_key: { namespace, key_type: keyType, public_key_hex: publicKeyHex },
+      proof: { scheme: 'ethereum-personal-sign', signature_hex: signature.slice(2) },
+      metadata: [
+        { key: 'wallet', value: String(arg('wallet-address', account.address)) },
+        { key: 'signature_type', value: String(arg('signature-type', '2')) },
+        { key: 'venue', value: 'polymarket' },
+      ],
+    });
+
+    const result = await submit(payload, { dryRun: !!arg('dry-run', false) });
+    console.log(JSON.stringify({ signer: account.address, ...result }, null, 2));
+
+    if (arg('attach', false) && typeof arg('token-id', null) === 'string') {
+      const reference = await callTool('build_set_external_reference', {
+        network: NETWORK,
+        sender: ACCOUNT,
+        token_id: arg('token-id'),
+        external_reference: {
+          contract_address: { index: 12801, subindex: 0 },
+          kind: 'Cis8',
+          key: { namespace, key_type: keyType, public_key_hex: publicKeyHex },
+        },
+      });
+      console.log(JSON.stringify(await submit(reference), null, 2));
+    }
+  },
+
+  /**
+   * Attach an already-registered CIS-8 key to an agent NFT.
+   *
+   * Use the canonical key form reported by `owner_of_key` (the registry stores
+   * secp256k1 keys compressed), otherwise the reference points at a key shape
+   * that never resolves.
+   */
+  async 'attach-key'() {
+    const payload = await callTool('build_set_external_reference', {
+      network: NETWORK,
+      sender: ACCOUNT,
+      token_id: arg('token-id'),
+      external_reference: {
+        contract_address: { index: 12801, subindex: 0 },
+        kind: 'Cis8',
+        key: {
+          namespace: String(arg('namespace', 'eip155:137')),
+          key_type: String(arg('key-type', 'secp256k1-compressed')),
+          public_key_hex: String(arg('public-key-hex')).replace(/^0x/i, '').toLowerCase(),
+        },
+      },
     });
     console.log(JSON.stringify(await submit(payload, { dryRun: !!arg('dry-run', false) }), null, 2));
   },

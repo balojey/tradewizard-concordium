@@ -13,7 +13,7 @@ This is an honest submission in the middle of its build window, and the distinct
 | | |
 | --- | --- |
 | **Verified today** | Registry MCP (41 tools) and REST verification read/written against live testnet; agent card generation and hashing; the payload → signed-transaction pipeline against a real chain nonce; 950 passing tests across the backend |
-| **Executed on chain** | Agent token `1224` (`JyP9XfKVsCUMaaEsDtyoS`) registered on Concordium testnet by an identity-backed account, card hash pinned, `badge_valid: true` on all 15 checks |
+| **Executed on chain** | Agent token `1224` (`JyP9XfKVsCUMaaEsDtyoS`) registered on Concordium testnet by an identity-backed account, card hash pinned, `badge_valid: true` on all 15 checks, and a `eip155:137` Polymarket signer key bound via CIS-8 and attached to the token |
 | **Implemented, not yet executed on chain** | Epoch anchoring and inclusion proofs — built and tested; they need the deployed database plus the operator's signature |
 | **Not built** | x402 payments. Designed, costed, deliberately deferred behind the two halves that make up the actual claim |
 | **Why the gap** | Minting and anchoring are owner-authorised on CIS-8004. Our service holds no keys by design, so the last hop is the operator's wallet, not our Lambda. We consider that a feature and explain it below |
@@ -50,7 +50,7 @@ Crucially, the agent already records **why** it acted: every decision row stores
 The operator verifies once with a Concordium identity provider — a real identity check, not an email address. Their agent is then registered in the CIS-8004 agent registry as an NFT owned by that identity-backed account, with:
 
 - an **A2A Agent Card** at a public URL, whose SHA-256 is pinned on-chain (`metadata_hash`), so the card cannot be swapped after the fact;
-- a **CIS-8 binding** between the Concordium account and the agent's `secp256k1` Polymarket key, so identity on Concordium resolves to an address that actually executes on Polygon;
+- a **CIS-8 binding** between the Concordium account and the agent's `secp256k1` Polymarket **signer** key, so identity on Concordium resolves to the key that actually authorises orders on Polygon — not the Safe that merely holds the funds;
 - the **Verified by Concordium badge** embedded as an A2A capability extension.
 
 Anyone can check it with a plain HTTP GET — no SDK, no API key:

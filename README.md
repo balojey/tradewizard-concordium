@@ -56,13 +56,14 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
 | Inclusion-proof endpoint | ✅ built, verified against anchored root |
 | Mint → live `badge_valid: true` | ✅ executed: token `1224` on testnet, 15/15 checks, zero issues |
+| CIS-8 binding to the Polymarket signer | ✅ executed: `eip155:137` secp256k1 key registered and attached to token `1224` |
 | x402 payments | ⛔ unproven, deferred by design |
 
 Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit half is implemented and tested but has not yet been anchored, because anchoring needs the deployed database and the operator's signature. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
 
 ### How the pieces fit
 
-1. **Identity.** The operator verifies once with a Concordium identity provider and registers their agent through our MCP client; the agent's Polymarket `secp256k1` key is bound on-chain via CIS-8, so identity on Concordium resolves to execution on Polygon. The agent carries an A2A Agent Card at a public URL whose SHA-256 is pinned on-chain.
+1. **Identity.** The operator verifies once with a Concordium identity provider and registers their agent through our MCP client. The agent's Polymarket **signer** key (the EOA that authorises orders — not the Safe that holds funds) is bound on-chain via CIS-8, so identity on Concordium resolves to the key that actually trades on Polygon. The agent carries an A2A Agent Card at a public URL whose SHA-256 is pinned on-chain.
 2. **Audit.** Every Portfolio Manager decision is already recorded with its action, conviction, reasoning and skip reason. The anchoring job hashes an epoch of decisions into a Merkle root and stages a registry metadata write pinning that root. A subscriber asks for an inclusion proof for their own trade and recomputes the root themselves.
 3. **Refusal as evidence.** The proof endpoint rebuilds the epoch and **will not answer if the rebuild no longer reproduces the anchored root**. Editing or deleting a decision after the fact stops proofs rather than letting them verify against something else.
 
@@ -92,6 +93,7 @@ docs/                      # Design records, hackathon assessment and spike resu
 - [`docs/concordium-integration-assessment.md`](docs/concordium-integration-assessment.md) — what Concordium's registry, badge and x402 actually provide, and what each costs to integrate
 - [`docs/concordium-spike.md`](docs/concordium-spike.md) — spike results: what was proven against the live testnet, what is blocked and why
 - [`docs/concordium-testnet-setup.md`](docs/concordium-testnet-setup.md) — getting a testnet identity and account, and handing the key to the CLI
+- [`docs/concordium-polymarket-mapping.md`](docs/concordium-polymarket-mapping.md) — which Polymarket key is the agent, and why we bind the signer EOA rather than the Safe
 - [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
 - [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
 - [`infra/README.md`](infra/README.md) — deployment details
