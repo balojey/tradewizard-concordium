@@ -57,6 +57,11 @@ const CORS_HEADERS: Record<string, string> = {
 
 /** Concordium account addresses are 50 base58 characters. */
 const ACCOUNT_RE = /^[1-9A-HJ-NP-Za-km-z]{50}$/;
+/**
+ * Path ids are UUIDs. Without this check a junk id reaches Postgres as an
+ * invalid uuid literal and the error surfaces as a 500 instead of a 404.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_RE = /^[0-9a-fA-F]+$/;
 const NETWORKS = new Set(['devnet', 'testnet', 'mainnet']);
 /** secp256k1 public keys: 33-byte compressed or 65-byte uncompressed. */
@@ -202,6 +207,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
   }
 
   async function ownedAgent(userId: string, agentId: string): Promise<ConcordiumAgentRow> {
+    if (!UUID_RE.test(agentId)) throw new HttpError(404, 'Agent not found', 'not_found');
     const agent = await deps.repo.getForUser(userId, agentId);
     if (!agent) throw new HttpError(404, 'Agent not found', 'not_found');
     return agent;
@@ -314,7 +320,9 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
    * already discloses by design.
    */
   async function getCard(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-    const agent = await deps.repo.getById(event.pathParameters?.id ?? '');
+    const agentId = event.pathParameters?.id ?? '';
+    if (!UUID_RE.test(agentId)) throw new HttpError(404, 'Agent card not published', 'card_not_found');
+    const agent = await deps.repo.getById(agentId);
     if (!agent?.card_json) throw new HttpError(404, 'Agent card not published', 'card_not_found');
     return respondRawCard(agent.card_json);
   }
@@ -397,6 +405,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       throw new HttpError(400, '`anchorId` and `decisionId` are required', 'missing_params');
     }
 
+    if (!UUID_RE.test(anchorId)) throw new HttpError(404, 'Anchor not found', 'anchor_not_found');
     const anchor = await deps.anchors.getAnchorForAgent(userId, agent.id, anchorId);
     if (!anchor) throw new HttpError(404, 'Anchor not found', 'anchor_not_found');
 

@@ -29,6 +29,7 @@ import {
 } from '../../services/shared/concordium/decision-root';
 import { anchorMetadataKey } from '../../services/shared/concordium/anchor-metadata';
 import { submitPayload } from './submit';
+import { createPgAnchorRepository } from '../../services/shared/concordium-db';
 
 const NETWORK = (process.env.CONCORDIUM_NETWORK ?? 'testnet') as 'testnet' | 'mainnet' | 'devnet';
 const registry: AgentRegistryClient = createAgentRegistryClient({ network: NETWORK });
@@ -171,6 +172,41 @@ const commands: Record<string, () => Promise<void>> = {
     if (tamperedRoot === root) process.exitCode = 1;
   },
 
+  /**
+   * Submit an anchor the job staged: sign the stored payload, wait for
+   * finalization, and record the transaction hash on the row.
+   */
+  async confirm() {
+    const anchorId = String(arg('anchor-id'));
+    const repo = createPgAnchorRepository();
+    const anchor = await repo.getAnchorById(anchorId);
+    if (!anchor) throw new Error(`anchor ${anchorId} not found`);
+    if (anchor.tx_hash) {
+      console.log(`already confirmed: ${anchor.tx_hash}`);
+      return;
+    }
+    if (!anchor.payload_hex) throw new Error('anchor has no staged payload');
+
+    const payload = {
+      contract_address: { index: 12802, subindex: 0 },
+      receive_name: 'CIS-8004.setMetadata',
+      parameter_hex: anchor.payload_hex,
+      suggested_energy: 30000,
+    };
+
+    const result = await submitPayload(payload, { dryRun: !!arg('dry-run') });
+    if (result.hash) {
+      await repo.recordAnchorTx(anchor.id, result.hash);
+      console.log(
+        JSON.stringify(
+          { anchorId: anchor.id, epochEnd: anchor.epoch_end, rootHash: anchor.root_hash, txHash: result.hash },
+          null,
+          2,
+        ),
+      );
+    }
+  },
+
   /** Read back what is actually committed on-chain and compare it with the file. */
   async read() {
     const decisions = loadDecisions(String(arg('file')));
@@ -208,6 +244,6 @@ async function main(): Promise<void> {
 
 // The infra package compiles to CommonJS, where a top-level await is not allowed.
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(error instanceof Error ? error.stack ?? error.message : error);
   process.exit(1);
 });

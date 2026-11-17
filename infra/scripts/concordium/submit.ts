@@ -85,7 +85,14 @@ export async function submitPayload(
   const outcome = summary?.summary ?? summary;
   if (outcome?.transactionType === 'failed' || outcome?.type === 'failed') {
     const reason = outcome?.rejectReason ?? outcome?.details ?? outcome;
-    throw new Error(`transaction ${hashHex} FAILED on chain: ${JSON.stringify(reason)}`);
+    const detail = (() => {
+      try {
+        return JSON.stringify(reason, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+      } catch {
+        return String(reason);
+      }
+    })();
+    throw new Error(`transaction ${hashHex} FAILED on chain: ${detail}`);
   }
 
   console.log(`submitted: ${hashHex}`);

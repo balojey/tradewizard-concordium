@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'crypto';
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { createHandler, type ConcordiumAgentDeps } from './handler';
 import { computeDecisionRoot } from '../shared/concordium/decision-root';
@@ -35,7 +36,7 @@ function memoryRepo(): ConcordiumAgentRepository & { rows: Map<string, Concordiu
     async createPending(input: CreatePendingAgentInput) {
       seq += 1;
       return put({
-        id: `agent-${seq}`,
+        id: randomUUID(),
         user_id: input.userId,
         network: input.network,
         concordium_account: input.concordiumAccount,
@@ -103,6 +104,9 @@ function memoryAnchors(seed: { anchors?: AnchorRow[]; decisions?: DecisionRowSou
     async recordAnchorTx() {},
     async listAnchorsForAgent(_userId, agentId) {
       return anchors.filter((anchor) => anchor.agent_id === agentId);
+    },
+    async getAnchorById(anchorId) {
+      return anchors.find((anchor) => anchor.id === anchorId) ?? null;
     },
     async getAnchorForAgent(_userId, agentId, anchorId) {
       return anchors.find((anchor) => anchor.id === anchorId && anchor.agent_id === agentId) ?? null;
@@ -615,7 +619,7 @@ describe('anchors and inclusion proofs', () => {
 
   function anchorFor(agentId: string, overrides: Partial<AnchorRow> = {}): AnchorRow {
     return {
-      id: 'anchor-1',
+      id: randomUUID(),
       agent_id: agentId,
       epoch_start: '2026-11-16T09:00:00.000Z',
       epoch_end: '2026-11-16T11:00:00.000Z',
@@ -786,7 +790,7 @@ describe('anchors and inclusion proofs', () => {
     const s = await setup();
     const staged = anchorFor(s.id);
     const submitted = anchorFor(s.id, {
-      id: 'anchor-2',
+      id: randomUUID(),
       tx_hash: 'cd'.repeat(32),
       payload_hex: null,
       anchored_at: '2026-11-16T13:00:00.000Z',
@@ -798,9 +802,29 @@ describe('anchors and inclusion proofs', () => {
     expect(result.statusCode).toBe(200);
     const payload = parse(result);
     expect(payload.anchors).toHaveLength(2);
-    expect(payload.anchors[0]).toMatchObject({ id: 'anchor-1', pendingSignature: true });
-    expect(payload.anchors[1]).toMatchObject({ id: 'anchor-2', pendingSignature: false, txHash: 'cd'.repeat(32) });
+    expect(payload.anchors[0]).toMatchObject({ id: staged.id, pendingSignature: true });
+    expect(payload.anchors[1]).toMatchObject({ id: submitted.id, pendingSignature: false, txHash: 'cd'.repeat(32) });
     // The sign-ready payload itself never leaves the server.
     expect(payload.anchors[0].payloadHex).toBeUndefined();
+  });
+});
+
+describe('malformed ids', () => {
+  it('404s a non-UUID id on the public card route instead of reaching the database', async () => {
+    const { deps } = makeDeps();
+    const result = await run(deps)(
+      event({ resource: '/concordium/agents/{id}/card', pathParameters: { id: 'does-not-exist' }, sub: null }),
+    );
+    expect(result.statusCode).toBe(404);
+    expect(parse(result).code).toBe('card_not_found');
+  });
+
+  it('404s a non-UUID id on the authenticated routes', async () => {
+    const { deps } = makeDeps();
+    const result = await run(deps)(
+      event({ resource: '/concordium/agents/{id}', pathParameters: { id: 'not-a-uuid' } }),
+    );
+    expect(result.statusCode).toBe(404);
+    expect(parse(result).code).toBe('not_found');
   });
 });

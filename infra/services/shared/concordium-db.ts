@@ -246,6 +246,8 @@ export interface ConcordiumAnchorRepository {
   recordAnchorTx(anchorId: string, txHash: string): Promise<void>;
   /** Anchors for one agent, newest epoch first. */
   listAnchorsForAgent(userId: string, agentId: string): Promise<AnchorRow[]>;
+  /** One anchor by id, regardless of owner. Used by the operator confirm step. */
+  getAnchorById(anchorId: string): Promise<AnchorRow | null>;
   /** One anchor, only if the agent belongs to this user. */
   getAnchorForAgent(userId: string, agentId: string, anchorId: string): Promise<AnchorRow | null>;
   /**
@@ -363,6 +365,16 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
           [userId, agentId],
         );
         return rows;
+      });
+    },
+
+    async getAnchorById(anchorId) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<AnchorRow>(
+          `SELECT * FROM concordium_audit_anchors WHERE id = $1 LIMIT 1`,
+          [anchorId],
+        );
+        return rows[0] ?? null;
       });
     },
 

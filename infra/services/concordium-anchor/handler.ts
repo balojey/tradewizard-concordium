@@ -78,11 +78,15 @@ async function anchorAgent(
     const metadataKey = anchorMetadataKey(epochEnd);
 
     // The service returns a sign-ready payload; nobody here can sign it.
+    //
+    // `value_hex` is hex-decoded into raw bytes by the tool, and CIS-8004
+    // rejects non-UTF-8 metadata values (-7208). The root therefore goes in as
+    // the hex-encoded ASCII form of the digest, which is what readers decode.
     const payload = await deps.registry.callTool<{ parameter_hex?: string }>('build_set_metadata', {
       sender: agent.concordiumAccount,
       token_id: agent.tokenId,
       key: metadataKey,
-      value_hex: rootHash,
+      value_hex: Buffer.from(rootHash, 'utf8').toString('hex'),
     });
 
     if (!payload?.parameter_hex) {

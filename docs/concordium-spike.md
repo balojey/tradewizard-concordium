@@ -29,6 +29,32 @@ That result is the claim in the submission, and it is reproducible with the comm
 
 **Verification is unforgiving in a useful way.** The 15 checks caught nothing only because every one was satisfied: on-chain record, active status, card fetch, hash match, extension form, token/owner/contract refs and verify URL. Hand-written or stale cards fail several at once, which is why most live agents do not pass.
 
+## Deployed (17 Nov 2026)
+
+The dev stack is deployed under its own namespace, so it shares the AWS account
+with the original deployment without touching it: stacks `TradeWizard-Concordium-Dev-*`,
+resources `tw-dev-concordium-*`, VPC `10.2.0.0/16`.
+
+What the deployed stack then proved, in order:
+
+1. `GET /concordium/agents` → `401` (route exists, Cognito authorizer attached).
+2. Seeded operator + agent rows; `GET /concordium/agents/{id}/card` → `200`, and the
+   served SHA-256 equals the hash pinned on-chain (`6f9fe84a…f9b9`).
+3. The anchoring job ran against real Aurora—sorry, RDS—rows and staged an epoch root.
+4. `anchor-proof.ts confirm` signed the staged payload: tx `c370ce4c…c326`.
+5. `get_metadata` on the agent returns that root, byte-identical to the value
+   computed from the database.
+
+Two bugs the deployment exposed and fixed:
+
+- **A junk path id 500'd instead of 404'ing.** `GET /concordium/agents/does-not-exist/card`
+  passed the string into a `uuid` column, and Postgres rejected it. Path ids are now
+  validated as UUIDs before any query.
+- **The anchoring job staged an unwritable payload.** The job passed the Merkle root
+  as raw bytes; CIS-8004 rejects non-UTF-8 metadata (`-7208`). The CLI had been fixed;
+  the service had not. Both now encode the root as the hex of its ASCII form, with a
+  regression test asserting the staged `value_hex` differs from the bare digest.
+
 ## What was proven
 
 Run end to end against the live testnet, today:

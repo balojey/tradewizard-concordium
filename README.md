@@ -157,6 +157,38 @@ resource names**. `./deploy.sh down dev` and `wipe:dev` are namespaced too, so
 neither can reach the other deployment's data. Leave the variable set — unsetting
 it restores the original naming exactly, which would then collide.
 
+## Deployed dev environment
+
+The namespaced stack is live in `us-east-1`, alongside the original deployment and
+independent of it:
+
+| | |
+| --- | --- |
+| API | `https://z8l6rxb6ui.execute-api.us-east-1.amazonaws.com/dev/` |
+| Stacks | `TradeWizard-Concordium-Dev-*` (9) |
+| Database | `tw-dev-concordium-postgres` — RDS PostgreSQL `db.t4g.micro` |
+| Agent | token `1224` in the up-to-date database rows, card served at `/concordium/agents/{id}/card` |
+| Anchored root | `1515637f8c5a34844e7194ccb05e57c38c435877a30c9e5c13fa40cac6d29f6e` (tx `c370ce4c…c326`) |
+
+```bash
+cd infra
+set -a && source .env.dev && set +a
+
+# seed the demo operator, agent and decision rows (idempotent)
+DB_SECRET_ARN=tw-dev-concordium-db-credentials \
+DB_HOST=$(aws rds describe-db-instances --db-instance-identifier tw-dev-concordium-postgres \
+  --region us-east-1 --query "DBInstances[0].Endpoint.Address" --output text) \
+npx tsx scripts/concordium/seed-demo.ts --decisions
+
+# stage a root from those rows, then sign and submit it
+aws lambda invoke --function-name tw-dev-concordium-concordium-anchor \
+  --payload '{}' --cli-binary-format raw-in-base64-out /tmp/anchor.json
+npx tsx scripts/concordium/anchor-proof.ts confirm --anchor-id <anchorId from the job output>
+```
+
+Tear down with `./deploy.sh down dev` — it only ever addresses
+`TradeWizard-Concordium-*` / `tw-dev-concordium-*`.
+
 ## Prerequisites
 
 | Requirement | Used by |

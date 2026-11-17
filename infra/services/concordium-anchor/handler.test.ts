@@ -63,6 +63,9 @@ function memoryAnchors(options: {
     async listAnchorsForAgent() {
       return [];
     },
+    async getAnchorById() {
+      return null;
+    },
     async getAnchorForAgent() {
       return null;
     },
@@ -156,8 +159,10 @@ describe('runAnchorJob', () => {
       sender: AGENT.concordiumAccount,
       token_id: '1209',
       key: 'decisionRoot:20261116T090200.000Z',
-      value_hex: expectedRoot,
+      // ASCII root, hex-encoded: the contract rejects raw digest bytes (-7208).
+      value_hex: Buffer.from(expectedRoot, 'utf8').toString('hex'),
     });
+    expect(tools[0].args.value_hex).not.toBe(expectedRoot);
   });
 
   it('asks only for decisions since the last anchor', async () => {
