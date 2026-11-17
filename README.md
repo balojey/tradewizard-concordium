@@ -54,12 +54,13 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | `concordium_agents` / `concordium_audit_anchors` schema | ✅ built |
 | Agent registry API + public card hosting | ✅ built, 32 handler tests |
 | Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
+| Root anchored on-chain + proof verified | ✅ executed: `decisionRoot:20261117T101219.740Z` pinned on token `1224`, reads back identical |
 | Inclusion-proof endpoint | ✅ built, verified against anchored root |
 | Mint → live `badge_valid: true` | ✅ executed: token `1224` on testnet, 15/15 checks, zero issues |
 | CIS-8 binding to the Polymarket signer | ✅ executed: `eip155:137` secp256k1 key registered and attached to token `1224` |
 | x402 payments | ⛔ unproven, deferred by design |
 
-Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit half is implemented and tested but has not yet been anchored, because anchoring needs the deployed database and the operator's signature. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
+Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit mechanism is live too: a 5-decision epoch is pinned on token `1224` and reads back byte-identical, and an inclusion proof recomputes to that root. What is still unbuilt is the Aurora-backed proof endpoint — the code exists and is tested, but it needs the stack deployed. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
 
 ### How the pieces fit
 
@@ -94,6 +95,7 @@ docs/                      # Design records, hackathon assessment and spike resu
 - [`docs/concordium-spike.md`](docs/concordium-spike.md) — spike results: what was proven against the live testnet, what is blocked and why
 - [`docs/concordium-testnet-setup.md`](docs/concordium-testnet-setup.md) — getting a testnet identity and account, and handing the key to the CLI
 - [`docs/concordium-polymarket-mapping.md`](docs/concordium-polymarket-mapping.md) — which Polymarket key is the agent, and why we bind the signer EOA rather than the Safe
+- [`docs/concordium-attestation.md`](docs/concordium-attestation.md) — anchoring a decision epoch on-chain and proving one trade's inclusion
 - [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
 - [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
 - [`infra/README.md`](infra/README.md) — deployment details
@@ -127,6 +129,9 @@ node scripts/concordium/agent.mjs info
 node scripts/concordium/agent.mjs card  --name "..." --description "..." --uri https://.../agent-card.json
 node scripts/concordium/agent.mjs register --uri https://.../agent-card.json --hash <sha256> --dry-run
 node scripts/concordium/agent.mjs check   --token <token_address>
+
+npx tsx scripts/concordium/anchor-proof.ts anchor --file ../docs/agents/example-decisions.json --token-id <token>
+npx tsx scripts/concordium/anchor-proof.ts prove  --file ../docs/agents/example-decisions.json --decision <decision id>
 ```
 
 ## Prerequisites

@@ -28,8 +28,10 @@ import { createAgentRegistryClient, type AgentRegistryClient } from '../shared/c
 import { computeDecisionRoot, DECISION_LEAF_VERSION } from '../shared/concordium/decision-root';
 import { toAnchorableDecision } from '../shared/concordium/decision-row';
 
-/** Registry metadata keys are capped at 64 characters. */
-const METADATA_KEY_PREFIX = 'decisionRoot:';
+import { anchorMetadataKey } from '../shared/concordium/anchor-metadata';
+
+// Re-exported for the job's tests; the implementation is shared with the CLI.
+export { anchorMetadataKey };
 
 export interface AnchorJobDeps {
   anchors: ConcordiumAnchorRepository;
@@ -57,17 +59,6 @@ export interface AnchorJobResult {
   duplicates: number;
   failed: number;
   agents: AgentAnchorOutcome[];
-}
-
-/**
- * Compact epoch stamp used as the metadata key suffix.
- * `2026-11-16T12:00:00.000Z` → `20261116T120000.000Z`.
- *
- * Milliseconds are kept on purpose: two epochs can end within the same second,
- * and a key collision would silently overwrite the previous root on-chain.
- */
-export function anchorMetadataKey(epochEnd: string): string {
-  return `${METADATA_KEY_PREFIX}${epochEnd.replace(/[-:]/g, '')}`.slice(0, 64);
 }
 
 async function anchorAgent(

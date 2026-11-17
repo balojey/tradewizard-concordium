@@ -16,6 +16,8 @@ The whole write path was executed against testnet, end to end, with a real ident
 | Mint | `6104b7b5bdbecd46771e963ffd0effeff4dc16e16c2cb03b627413a4cbff1d14` (block 50924450) |
 | URI + hash pinned | `be8e0f6fc936773c0b7efd6eb437b54c521c5787745749ab67422402beaad243` (block 50924597) |
 | Verification | `badge_valid: true`, **15/15 checks**, zero issues |
+| Polymarket signer bound | CIS-8 `eip155:137` key registered and attached to the token |
+| Decision epoch anchored | root `d046cfcd…9cb4` under `decisionRoot:20261117T101219.740Z`, tx `529d7245…1504` |
 
 That result is the claim in the submission, and it is reproducible with the commands in `docs/concordium-testnet-setup.md`.
 

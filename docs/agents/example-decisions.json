@@ -1,0 +1,67 @@
+[
+  {
+    "id": "4e1a7c30-0000-4000-8000-000000000001",
+    "session_id": "9b1deb4d-0000-4000-8000-000000000001",
+    "analysis_result_id": "3f2a1c88-0000-4000-8000-000000000001",
+    "action": "enter",
+    "edge_met": true,
+    "alignment_met": true,
+    "conviction_score": 0.74,
+    "position_direction": "YES",
+    "reasoning": "Model probability 0.68 against a 0.54 market. Edge 14 points, above the 10-point threshold; polling trend and order-flow skew both align.",
+    "skip_reason": null,
+    "created_at": "2026-11-17T08:05:12.311Z"
+  },
+  {
+    "id": "4e1a7c30-0000-4000-8000-000000000002",
+    "session_id": "9b1deb4d-0000-4000-8000-000000000001",
+    "analysis_result_id": "3f2a1c88-0000-4000-8000-000000000002",
+    "action": "hold",
+    "edge_met": true,
+    "alignment_met": false,
+    "conviction_score": 0.61,
+    "position_direction": "YES",
+    "reasoning": "Position is profitable but momentum has flattened and one cross-examination test failed on resolution wording. Holding rather than adding.",
+    "skip_reason": null,
+    "created_at": "2026-11-17T08:35:44.902Z"
+  },
+  {
+    "id": "4e1a7c30-0000-4000-8000-000000000003",
+    "session_id": "9b1deb4d-0000-4000-8000-000000000001",
+    "analysis_result_id": "3f2a1c88-0000-4000-8000-000000000003",
+    "action": "skip",
+    "edge_met": false,
+    "alignment_met": true,
+    "conviction_score": 0.41,
+    "position_direction": null,
+    "reasoning": "Market has moved to within 3 points of our estimate. No edge left; entering here would be paying spread for noise.",
+    "skip_reason": "edge below threshold",
+    "created_at": "2026-11-17T09:05:03.455Z"
+  },
+  {
+    "id": "4e1a7c30-0000-4000-8000-000000000004",
+    "session_id": "9b1deb4d-0000-4000-8000-000000000002",
+    "analysis_result_id": "3f2a1c88-0000-4000-8000-000000000004",
+    "action": "exit",
+    "edge_met": true,
+    "alignment_met": true,
+    "conviction_score": 0.79,
+    "position_direction": "NO",
+    "reasoning": "Take-profit level reached at 0.22 after the announcement. Exiting in full; the remaining upside no longer compensates for headline risk.",
+    "skip_reason": null,
+    "created_at": "2026-11-17T09:41:37.118Z"
+  },
+  {
+    "id": "4e1a7c30-0000-4000-8000-000000000005",
+    "session_id": "9b1deb4d-0000-4000-8000-000000000002",
+    "analysis_result_id": "3f2a1c88-0000-4000-8000-000000000005",
+    "action": "no_action",
+    "edge_met": false,
+    "alignment_met": false,
+    "conviction_score": 0.33,
+    "position_direction": null,
+    "reasoning": "Analysis timed out on the research stage and the consensus stage fell back to the anchored prior. No actionable signal this cycle.",
+    "skip_reason": "insufficient consensus",
+    "created_at": "2026-11-17T10:12:19.740Z"
+  }
+]

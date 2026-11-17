@@ -111,7 +111,12 @@ async function submit(payload, { dryRun = false } = {}) {
   // Buffer.from() on it throws *after* the transaction is already submitted,
   // which is how a "failed" run can still have minted something.
   const hashHex = String(hash).replace(/^0x/i, '');
-  await grpc.waitForTransactionFinalization(hash);
+  const summary = await grpc.waitForTransactionFinalization(hash);
+  // Finality is not success: a rejected receive still finalizes.
+  const outcome = summary?.summary ?? summary;
+  if (outcome?.transactionType === 'failed' || outcome?.type === 'failed') {
+    throw new Error(`transaction ${hashHex} FAILED on chain: ${JSON.stringify(outcome?.rejectReason ?? outcome)}`);
+  }
   console.log(`submitted: ${hashHex}`);
   console.log(`explorer:  https://testnet.ccdscan.io/?dtab=account&a=${ACCOUNT}`);
   return { hash: hashHex };
