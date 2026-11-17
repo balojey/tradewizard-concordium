@@ -37,6 +37,9 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
 
   const data = await response.json();
   if (!response.ok) {
+    // Prefer the human message; keep the technical detail for the console so a
+    // failed deposit is diagnosable without reproducing it under a debugger.
+    if (data?.detail) console.warn("Bridge request detail:", data.detail);
     throw new Error(data?.error || "Bridge request failed");
   }
   return data as T;
