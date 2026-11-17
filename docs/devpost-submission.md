@@ -13,7 +13,8 @@ This is an honest submission in the middle of its build window, and the distinct
 | | |
 | --- | --- |
 | **Verified today** | Registry MCP (41 tools) and REST verification read/written against live testnet; agent card generation and hashing; the payload → signed-transaction pipeline against a real chain nonce; 950 passing tests across the backend |
-| **Implemented, not yet executed on chain** | Agent registration, card hosting, badge verification, epoch anchoring, inclusion proofs — all built, all tested, waiting on the operator's signature |
+| **Executed on chain** | Agent token `1224` (`JyP9XfKVsCUMaaEsDtyoS`) registered on Concordium testnet by an identity-backed account, card hash pinned, `badge_valid: true` on all 15 checks |
+| **Implemented, not yet executed on chain** | Epoch anchoring and inclusion proofs — built and tested; they need the deployed database plus the operator's signature |
 | **Not built** | x402 payments. Designed, costed, deliberately deferred behind the two halves that make up the actual claim |
 | **Why the gap** | Minting and anchoring are owner-authorised on CIS-8004. Our service holds no keys by design, so the last hop is the operator's wallet, not our Lambda. We consider that a feature and explain it below |
 

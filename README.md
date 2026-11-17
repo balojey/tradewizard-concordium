@@ -55,10 +55,10 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | Agent registry API + public card hosting | ✅ built, 32 handler tests |
 | Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
 | Inclusion-proof endpoint | ✅ built, verified against anchored root |
-| Mint → live `badge_valid: true` | ⛔ pending: needs a funded testnet account (operator step) |
+| Mint → live `badge_valid: true` | ✅ executed: token `1224` on testnet, 15/15 checks, zero issues |
 | x402 payments | ⛔ unproven, deferred by design |
 
-Honest summary: **the identity and audit halves are implemented and tested; they have not yet been executed against a live registry entry**, because minting and anchoring require the operator's signature by design. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
+Honest summary: **the identity half is live** — agent token `1224` on Concordium testnet, card hash pinned on-chain, `badge_valid: true` across all 15 checks. The audit half is implemented and tested but has not yet been anchored, because anchoring needs the deployed database and the operator's signature. See `docs/concordium-spike.md` for exactly what was proven against the live service and what remains.
 
 ### How the pieces fit
 

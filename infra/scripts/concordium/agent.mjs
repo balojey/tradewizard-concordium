@@ -106,8 +106,11 @@ async function submit(payload, { dryRun = false } = {}) {
   }
 
   const hash = await grpc.sendTransaction(finalized);
+  // TransactionHash is a branded object; String() yields its hex form. Calling
+  // Buffer.from() on it throws *after* the transaction is already submitted,
+  // which is how a "failed" run can still have minted something.
+  const hashHex = String(hash).replace(/^0x/i, '');
   await grpc.waitForTransactionFinalization(hash);
-  const hashHex = Buffer.from(hash).toString('hex');
   console.log(`submitted: ${hashHex}`);
   console.log(`explorer:  https://testnet.ccdscan.io/?dtab=account&a=${ACCOUNT}`);
   return { hash: hashHex };
@@ -136,6 +139,22 @@ const commands = {
   },
 
   async register() {
+    // Minting is not idempotent: a crash after submission leaves an agent on
+    // chain, so a retry mints a second one. Refuse unless explicitly allowed.
+    if (!arg('allow-duplicate', false)) {
+      const existing = await callTool('agents_by_owner', { network: NETWORK, owner_account: ACCOUNT });
+      const duplicate = (existing.agents ?? []).find(
+        (agent) => agent.metadata_hash_hex === arg('hash') && agent.status !== 'Revoked',
+      );
+      if (duplicate) {
+        console.error(
+          `Already registered: token ${duplicate.token_id} (${duplicate.token_address ?? 'address unknown'}) on ${NETWORK}.\n` +
+            'Pass --allow-duplicate to mint another agent with the same card.',
+        );
+        process.exit(1);
+      }
+    }
+
     const payload = await callTool('build_register', {
       network: NETWORK,
       sender: ACCOUNT,
@@ -152,6 +171,18 @@ const commands = {
       token_id: arg('token-id'),
       agent_uri: arg('uri'),
       metadata_hash_hex: arg('hash'),
+    });
+    console.log(JSON.stringify(await submit(payload, { dryRun: !!arg('dry-run', false) }), null, 2));
+  },
+
+  async revoke() {
+    // Revoking marks the NFT Revoked (it is not burned) and clears the external
+    // reference and payment wallet. Use it for duplicates and for agents that
+    // should stop being treated as accountable.
+    const payload = await callTool('build_revoke', {
+      network: NETWORK,
+      sender: ACCOUNT,
+      token_id: arg('token-id'),
     });
     console.log(JSON.stringify(await submit(payload, { dryRun: !!arg('dry-run', false) }), null, 2));
   },

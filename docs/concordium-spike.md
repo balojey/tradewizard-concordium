@@ -4,6 +4,29 @@ Goal: prove `register agent → badge → check_badge clean` on testnet, and dec
 
 **Outcome: the whole pipeline is proven except the last hop — submission. Every on-chain write needs an identity-backed, funded account, and that account can only be created through an interactive wallet flow. That is a human step, not a code step.**
 
+## Live run: first verified agent (17 Nov 2026)
+
+The whole write path was executed against testnet, end to end, with a real identity-backed account.
+
+| | |
+| --- | --- |
+| Account | `43WTW9mXTvFheLNjmsso5hDEJyYTdn8cssFXYDUHruUjqSSpMu` (identity provider 0, identity 0, credential 0) |
+| Agent | token **1224** · `JyP9XfKVsCUMaaEsDtyoS` · status `Active` |
+| Card | `docs/agents/tradewizard-agent-card.json`, hash `6f9fe84a…f9b9`, served publicly |
+| Mint | `6104b7b5bdbecd46771e963ffd0effeff4dc16e16c2cb03b627413a4cbff1d14` (block 50924450) |
+| URI + hash pinned | `be8e0f6fc936773c0b7efd6eb437b54c521c5787745749ab67422402beaad243` (block 50924597) |
+| Verification | `badge_valid: true`, **15/15 checks**, zero issues |
+
+That result is the claim in the submission, and it is reproducible with the commands in `docs/concordium-testnet-setup.md`.
+
+### Three things the live run taught us
+
+**A crash after submission mints twice.** `TransactionHash` is a branded object, not a Buffer, so `Buffer.from(hash)` threw *after* `sendTransaction` had already succeeded. The run looked failed; the chain had accepted it; the retry minted a second agent (1224 and 1227, 28 seconds apart). Two fixes: format via `String(hash)`, and refuse to register when an active agent already carries the same `metadata_hash` unless `--allow-duplicate` is passed. The duplicate was revoked (`5627148a…`), which also exercised the revoke path — revoking marks the NFT `Revoked` and clears the payment wallet, so a superseded agent cannot keep receiving.
+
+**Pinning a hash to a CDN URL is a race.** The badged card was committed, but `raw.githubusercontent.com` served the previous bytes for ~200 seconds from its edge cache. Had we pinned immediately, `check_badge` would have failed with a hash mismatch that looks exactly like a corrupted card. We polled until the served hash matched before calling `set_uri`. The durable fix is content-addressed hosting — a URL containing the card hash — so a version can never be served stale under a pinned hash.
+
+**Verification is unforgiving in a useful way.** The 15 checks caught nothing only because every one was satisfied: on-chain record, active status, card fetch, hash match, extension form, token/owner/contract refs and verify URL. Hand-written or stale cards fail several at once, which is why most live agents do not pass.
+
 ## What was proven
 
 Run end to end against the live testnet, today:
