@@ -189,6 +189,28 @@ npx tsx scripts/concordium/anchor-proof.ts confirm --anchor-id <anchorId from th
 Tear down with `./deploy.sh down dev` — it only ever addresses
 `TradeWizard-Concordium-*` / `tw-dev-concordium-*`.
 
+### Frontend env
+
+`tradewizard-frontend/.env.local` (gitignored) points at this stack. Only four
+values are deployment-specific; everything else — Magic publishable key, Polygons
+RPC, platform wallet, Polymarket builder credentials — is inherited unchanged:
+
+| Key | Source |
+| --- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | `TradeWizard-Concordium-Dev-Compute` → `ApiUrl` |
+| `NEXT_PUBLIC_WS_URL` | `wss://{WebSocketApiId}.execute-api.us-east-1.amazonaws.com/dev` |
+| `NEXT_PUBLIC_COGNITO_USER_POOL_ID` | `TradeWizard-Concordium-Dev-Auth` → `UserPoolId` |
+| `NEXT_PUBLIC_COGNITO_CLIENT_ID` | `TradeWizard-Concordium-Dev-Auth` → `FrontendClientId` |
+
+`NEXT_PUBLIC_API_URL` stays `http://localhost:3000`: it is only used by
+`scripts/test-frontend-api-integration.ts`, not by the app.
+
+Verified after populating: `npm run dev` boots, `/` returns 200, `/markets`
+redirects (307) as the auth guard expects, CORS preflight from
+`http://localhost:3100` returns 204, and the Cognito client
+(`tw-dev-concordium-frontend-client`) has `ALLOW_CUSTOM_AUTH` enabled for the
+magic-link flow.
+
 ## Prerequisites
 
 | Requirement | Used by |
