@@ -38,8 +38,14 @@ import {
 const EXPLORER = 'https://testnet.ccdscan.io';
 const explorerAccount = (address: string) => `${EXPLORER}/?dcount=1&dentity=account&daddress=${address}`;
 const explorerTransaction = (hash: string) => `${EXPLORER}/?dcount=1&dentity=transaction&dhash=${hash}`;
-const explorerToken = (tokenId: string, index: number, subindex: number) =>
-  `${EXPLORER}/?dcount=1&dentity=token&did=${tokenId}&dcontractAddressIndex=${index}&dcontractAddressSubIndex=${subindex}`;
+/**
+ * CIS-2 agent NFTs are not reachable through the `token` entity: in CCDScan's
+ * router that entity carries PLT tokens (`PltTokenId` / `TokenDetailsContainer`),
+ * and a CIS-2 id lands on an empty page. Tokens are browsed from their contract,
+ * so the link goes to the registry contract at (12802, 0) instead.
+ */
+const explorerContract = (index: number, subindex: number) =>
+  `${EXPLORER}/?dcount=1&dentity=contract&dcontractAddressIndex=${index}&dcontractAddressSubIndex=${subindex}`;
 
 function short(value: string | null | undefined, head = 6, tail = 4): string {
   if (!value) return '—';
@@ -242,12 +248,12 @@ function AgentCard({ agent }: { agent: ConcordiumAgent }) {
         <Row label="Agent token">
           {agent.tokenAddress ? (
             <a
-              href={explorerToken(String(agent.tokenId ?? ''), 12802, 0)}
+              href={explorerContract(12802, 0)}
               target="_blank"
               rel="noreferrer"
               className="hover:text-accent hover:underline"
             >
-              #{agent.tokenId} · {agent.tokenAddress}
+              #{agent.tokenId} · {agent.tokenAddress} <span className="text-muted">(registry contract)</span>
             </a>
           ) : (
             'not minted'

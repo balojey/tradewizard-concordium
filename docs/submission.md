@@ -94,7 +94,7 @@ What Concordium gives that the EVM does not: identity is enforced at account cre
 | Claim | Where to check |
 | --- | --- |
 | Badge is valid, today | `GET /v1/check-badge/JyP9XfKVsCUMaaEsDtyoS` → 15/15, no issues |
-| Agent on chain | [CCDScan token 1224](https://testnet.ccdscan.io/?dcount=1&dentity=token&did=1224&dcontractAddressIndex=12802&dcontractAddressSubIndex=0) |
+| Agent on chain | [CCDScan registry contract (token 1224)](https://testnet.ccdscan.io/?dcount=1&dentity=contract&dcontractAddressIndex=12802&dcontractAddressSubIndex=0) |
 | Owner account | [CCDScan account](https://testnet.ccdscan.io/?dcount=1&dentity=account&daddress=43WTW9mXTvFheLNjmsso5hDEJyYTdn8cssFXYDUHruUjqSSpMu) |
 | Anchored root | metadata key `decisionRoot:20261123T152416.424Z` on token 1224, tx `50e859b8…` |
 | Self-serve registration | tx `d9918a38…`, token `1454` |
@@ -109,7 +109,7 @@ What Concordium gives that the EVM does not: identity is enforced at account cre
 | Description | This document |
 | Public code repository | https://github.com/balojey/tradewizard-concordium |
 | Demo video (≤ 3 min) | `docs/demo-script.md` — recorded from the running product |
-| CCDScan link | [token 1224](https://testnet.ccdscan.io/?dcount=1&dentity=token&did=1224&dcontractAddressIndex=12802&dcontractAddressSubIndex=0) |
+| CCDScan link | [registry contract, token 1224](https://testnet.ccdscan.io/?dcount=1&dentity=contract&dcontractAddressIndex=12802&dcontractAddressSubIndex=0) |
 | Plan for going live | Route to production, above |
 | Runs on testnet, uses Concordium meaningfully | CIS-8004 registry, CIS-8 key binding, badge, on-chain audit anchor |
 
