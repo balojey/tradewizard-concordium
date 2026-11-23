@@ -118,7 +118,7 @@ async function submit(payload, { dryRun = false } = {}) {
     throw new Error(`transaction ${hashHex} FAILED on chain: ${JSON.stringify(outcome?.rejectReason ?? outcome)}`);
   }
   console.log(`submitted: ${hashHex}`);
-  console.log(`explorer:  https://testnet.ccdscan.io/?dtab=account&a=${ACCOUNT}`);
+  console.log(`explorer:  https://testnet.ccdscan.io/?dcount=1&dentity=account&daddress=${ACCOUNT}`);
   return { hash: hashHex };
 }
 

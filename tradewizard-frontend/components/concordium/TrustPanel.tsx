@@ -29,13 +29,17 @@ import {
 } from '@/hooks/useConcordium';
 
 /**
- * CCDScan routes are query-param based: path forms such as `/account/<addr>`
- * return a JSON 404. Deep links must use ?dtab=…&<param>=… .
+ * CCDScan deep links are query-param routes — path forms such as
+ * `/account/<addr>` return a JSON 404. The scheme is read from CCDScan's own
+ * router: `dentity` names the entity, and the payload param depends on it
+ * (`daddress` for accounts, `dhash` for transactions, `did` + contract index
+ * for tokens). Keep the `dcount` the site emits.
  */
 const EXPLORER = 'https://testnet.ccdscan.io';
-const explorerAccount = (address: string) => `${EXPLORER}/?dtab=account&a=${address}`;
-const explorerTransaction = (hash: string) => `${EXPLORER}/?dtab=transaction&tx=${hash}`;
-const explorerToken = (tokenAddress: string) => `${EXPLORER}/?dtab=token&t=${tokenAddress}`;
+const explorerAccount = (address: string) => `${EXPLORER}/?dcount=1&dentity=account&daddress=${address}`;
+const explorerTransaction = (hash: string) => `${EXPLORER}/?dcount=1&dentity=transaction&dhash=${hash}`;
+const explorerToken = (tokenId: string, index: number, subindex: number) =>
+  `${EXPLORER}/?dcount=1&dentity=token&did=${tokenId}&dcontractAddressIndex=${index}&dcontractAddressSubIndex=${subindex}`;
 
 function short(value: string | null | undefined, head = 6, tail = 4): string {
   if (!value) return '—';
@@ -238,7 +242,7 @@ function AgentCard({ agent }: { agent: ConcordiumAgent }) {
         <Row label="Agent token">
           {agent.tokenAddress ? (
             <a
-              href={explorerToken(agent.tokenAddress)}
+              href={explorerToken(String(agent.tokenId ?? ''), 12802, 0)}
               target="_blank"
               rel="noreferrer"
               className="hover:text-accent hover:underline"
