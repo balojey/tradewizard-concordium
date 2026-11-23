@@ -65,6 +65,7 @@ npm run typecheck    # tsc --noEmit
 - **We never hold signing keys.** Every registry mutation is `build_*` → sign → submit. The Lambda stages payloads (`concordium_audit_anchors.payload_hex`) and the owner signs; do not "helpfully" add a service key to automate minting or anchoring.
 - **Decision hashing is a compatibility contract.** `shared/concordium/decision-root.ts` + `decision-row.ts` define the leaf preimage; staging and proof rebuild must agree or proofs stop verifying. Rows are ordered `created_at, id` in both queries - Postgres will not guarantee a stable order for equal timestamps. Changing any committed field or the ordering requires bumping `DECISION_LEAF_VERSION` (verification refuses unknown versions) and re-anchoring.
 - **A failed rebuild is the tamper signal.** The proof endpoint returns `409 epoch_not_reproducible` rather than a proof when the epoch no longer hashes to its anchored root. Do not paper over it with a warning.
+- **CCDScan deep links are query-param routes**, not paths: `?dtab=account&a=…`, `?dtab=token&t=…`, `?dtab=transaction&tx=…`. Path forms like `/account/<address>` return a JSON 404.
 - **Badge means accountable, not endorsed.** `shared/concordium/badge.ts` models `verified` / `registered` / `unknown` deliberately; never render `registered` as trust, and keep the caveat string in the UI.
 
 ## Stale sources

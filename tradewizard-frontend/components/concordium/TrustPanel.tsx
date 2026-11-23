@@ -28,7 +28,14 @@ import {
   type ConcordiumAnchor,
 } from '@/hooks/useConcordium';
 
+/**
+ * CCDScan routes are query-param based: path forms such as `/account/<addr>`
+ * return a JSON 404. Deep links must use ?dtab=…&<param>=… .
+ */
 const EXPLORER = 'https://testnet.ccdscan.io';
+const explorerAccount = (address: string) => `${EXPLORER}/?dtab=account&a=${address}`;
+const explorerTransaction = (hash: string) => `${EXPLORER}/?dtab=transaction&tx=${hash}`;
+const explorerToken = (tokenAddress: string) => `${EXPLORER}/?dtab=token&t=${tokenAddress}`;
 
 function short(value: string | null | undefined, head = 6, tail = 4): string {
   if (!value) return '—';
@@ -98,7 +105,7 @@ function AnchorRow({ agentId, anchor }: { agentId: string; anchor: ConcordiumAnc
         <div className="pb-3 pl-5">
           {anchor.txHash && (
             <a
-              href={`${EXPLORER}/transaction/${anchor.txHash}`}
+              href={explorerTransaction(anchor.txHash)}
               target="_blank"
               rel="noreferrer"
               className="mb-2 inline-flex items-center gap-1 text-[0.68rem] text-accent hover:underline"
@@ -220,7 +227,7 @@ function AgentCard({ agent }: { agent: ConcordiumAgent }) {
       <div className="px-4 py-2">
         <Row label="Concordium account">
           <a
-            href={`${EXPLORER}/account/${agent.concordiumAccount}`}
+            href={explorerAccount(agent.concordiumAccount)}
             target="_blank"
             rel="noreferrer"
             className="hover:text-accent hover:underline"
@@ -231,7 +238,7 @@ function AgentCard({ agent }: { agent: ConcordiumAgent }) {
         <Row label="Agent token">
           {agent.tokenAddress ? (
             <a
-              href={`${EXPLORER}/?dtab=token&t=${agent.tokenAddress}`}
+              href={explorerToken(agent.tokenAddress)}
               target="_blank"
               rel="noreferrer"
               className="hover:text-accent hover:underline"
