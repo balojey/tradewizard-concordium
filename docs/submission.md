@@ -15,7 +15,7 @@ The distinction between "built", "verified against the live service" and "execut
 | | |
 | --- | --- |
 | **Executed on chain** | Agent token **1224** (`JyP9XfKVsCUMaaEsDtyoS`) minted on Concordium testnet by an identity-backed account; card hash pinned; `badge_valid: true` on all 15 registry checks; a `eip155:137` Polymarket **signer** key bound via CIS-8 and attached to the token |
-| **Executed on chain** | A 5-decision epoch anchored on token 1224 (`529d7245…`); the root reads back byte-identical from the chain, an inclusion proof recomputes to it, and editing a decision afterwards makes the proof endpoint refuse with `409` |
+| **Executed on chain** | An epoch of **three live-market decisions** anchored on token 1224 (tx `50e859b8…`, root `c6dc1081…`): each decision came from a real analysis of a real Polymarket market by the 14-agent pipeline, and each was a genuine `NO_TRADE` refusal with its own consensus/edge numbers. The root reads back byte-identical from the chain, an inclusion proof recomputes to it, and editing a decision afterwards makes the proof endpoint refuse with `409` |
 | **Executed on chain** | Self-serve registration: the API returned a sign-ready payload, an external signer submitted it, and the mint was confirmed back into the API (testnet token `1454`) |
 | **Deployed and running** | `TradeWizard-Concordium-Dev-*` in `us-east-1`; the anchoring job has run every 6 hours for a week with zero errors; the proof endpoint is live and covered end to end |
 | **In the product** | An accountability panel on the portfolio page: badge state, live re-verify, browser-side card hash check, anchored epochs, per-decision proofs, and the `409` rendered as what it means |
@@ -61,7 +61,7 @@ The badge means **accountable, not endorsed**. Concordium has not reviewed our c
 
 ### 2. An audit trail that survives not trusting us
 
-Each epoch of decisions is hashed into a Merkle tree and only the root is written on-chain, as metadata on the agent NFT. A subscriber asks for an inclusion proof for their own trade and recomputes the root against the value committed on chain. Nothing per-trade is published.
+Each epoch of decisions is hashed into a Merkle tree and only the root is written on-chain, as metadata on the agent NFT. The decisions are the platform's own: the epoch anchored on token 1224 covers three live Polymarket markets the agent analysed and then declined to trade. A subscriber asks for an inclusion proof for their own trade and recomputes the root against the value committed on chain. Nothing per-trade is published.
 
 The part we are proudest of: **the proof endpoint refuses to answer when the epoch no longer rebuilds to its anchored root.** Delete or edit a decision after the fact and proofs stop being served rather than quietly verifying against a rewritten history. Pruning a row stops being a silent edit and becomes a detectable event.
 
@@ -96,7 +96,7 @@ What Concordium gives that the EVM does not: identity is enforced at account cre
 | Badge is valid, today | `GET /v1/check-badge/JyP9XfKVsCUMaaEsDtyoS` → 15/15, no issues |
 | Agent on chain | [CCDScan token 1224](https://testnet.ccdscan.io/?dtab=token&t=JyP9XfKVsCUMaaEsDtyoS) |
 | Owner account | [CCDScan account](https://testnet.ccdscan.io/?dtab=account&a=43WTW9mXTvFheLNjmsso5hDEJyYTdn8cssFXYDUHruUjqSSpMu) |
-| Anchored root | metadata key `decisionRoot:20261117T101219.740Z` on token 1224, tx `529d7245…` |
+| Anchored root | metadata key `decisionRoot:20261123T152416.424Z` on token 1224, tx `50e859b8…` |
 | Self-serve registration | tx `d9918a38…`, token `1454` |
 | Code | `infra/services/concordium-agent/`, `infra/services/concordium-anchor/`, `infra/services/shared/concordium/` |
 | Tests | `npm test` in `infra` (969), `npx tsx scripts/concordium/e2e.ts` (28 checks against the deployed stack) |

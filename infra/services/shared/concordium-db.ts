@@ -237,6 +237,13 @@ export interface AnchorableAgent {
 export interface DecisionRowSource {
   id: string;
   session_id: string;
+  /** Context for humans; deliberately not part of the hashed leaf. */
+  market_id?: string;
+  /** Joined analysis context (display only). */
+  recommendation?: string | null;
+  consensus_probability?: number | string | null;
+  market_probability_at_execution?: number | string | null;
+  edge?: number | string | null;
   analysis_result_id: string | null;
   action: string;
   edge_met: boolean | null;
@@ -310,6 +317,11 @@ export interface ConcordiumAnchorRepository {
 const DECISION_SELECT = `
   d.id,
   d.session_id,
+  s.market_id,
+  ar.recommendation,
+  ar.consensus_probability::float8 AS consensus_probability,
+  ar.market_probability_at_execution::float8 AS market_probability_at_execution,
+  ar.edge::float8 AS edge,
   d.analysis_result_id,
   d.action,
   d.edge_met,
@@ -351,6 +363,7 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
           `SELECT ${DECISION_SELECT}
              FROM portfolio_manager_decisions d
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
+             LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
             WHERE s.user_id = $1
               AND ($2::timestamptz IS NULL OR d.created_at > $2::timestamptz)
             ORDER BY d.created_at ASC, d.id ASC
@@ -439,6 +452,7 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
           `SELECT ${DECISION_SELECT}
              FROM portfolio_manager_decisions d
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
+             LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
             WHERE s.user_id = $1
               AND d.created_at >= $2::timestamptz
               AND d.created_at <= $3::timestamptz

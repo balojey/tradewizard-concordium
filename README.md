@@ -54,7 +54,7 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | `concordium_agents` / `concordium_audit_anchors` schema | ✅ built |
 | Agent registry API + public card hosting | ✅ built, 32 handler tests |
 | Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
-| Root anchored on-chain + proof verified | ✅ executed: `decisionRoot:20261117T101219.740Z` pinned on token `1224`, reads back identical |
+| Root anchored on-chain + proof verified | ✅ executed: three live-market decisions anchored (`decisionRoot:20261123T152416.424Z`, tx `50e859b8…`), reads back identical |
 | Inclusion-proof endpoint | ✅ built, verified against anchored root |
 | Accountability panel in the app | ✅ built — badge state, live re-verify, browser-side card hash check, anchored epochs, decision proofs |
 | Mint → live `badge_valid: true` | ✅ executed: token `1224` on testnet, 15/15 checks, zero issues |

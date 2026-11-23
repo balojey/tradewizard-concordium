@@ -67,12 +67,21 @@ export interface EpochDecision {
   action: string;
   positionDirection: string | null;
   createdAt: string;
+  /** Which market the decision was about, and what the analysis concluded. */
+  marketId: string | null;
+  analysis: {
+    recommendation: string | null;
+    consensusProbability: number | null;
+    marketProbability: number | null;
+    edge: number | null;
+  };
   leaf: string;
 }
 
 export interface DecisionProof {
   anchor: ConcordiumAnchor;
   decision: { id: string; action: string; reasoning: string; createdAt: string };
+  context?: { marketId: string | null };
   leafVersion: number;
   proof: { leaf: string; index: number; size: number; path: string[] };
   rootHash: string;

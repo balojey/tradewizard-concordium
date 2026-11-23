@@ -121,8 +121,30 @@ function AnchorRow({ agentId, anchor }: { agentId: string; anchor: ConcordiumAnc
                       decisionId === decision.id ? 'bg-accent/10 text-fg' : 'text-muted hover:bg-surface-2 hover:text-fg',
                     )}
                   >
-                    <span className="uppercase tracking-wide">{decision.action.replace('_', ' ')}</span>
-                    <span className="font-mono">{short(decision.id, 8, 4)}</span>
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="uppercase tracking-wide text-fg">
+                        {decision.action.replace('_', ' ')}
+                        {decision.analysis?.recommendation && (
+                          <span className="ml-1.5 normal-case text-muted">· {decision.analysis.recommendation}</span>
+                        )}
+                      </span>
+                      <span className="truncate font-mono text-[0.62rem] text-muted">
+                        {short(decision.marketId, 10, 6)}
+                        {decision.analysis?.edge !== null && decision.analysis?.edge !== undefined && (
+                          <> · edge {decision.analysis.edge > 0 ? '+' : ''}{(decision.analysis.edge * 100).toFixed(1)}pt</>
+                        )}
+                        {decision.analysis?.consensusProbability !== null &&
+                          decision.analysis?.marketProbability !== null &&
+                          decision.analysis?.consensusProbability !== undefined &&
+                          decision.analysis?.marketProbability !== undefined && (
+                            <>
+                              {' '}· {(decision.analysis.consensusProbability * 100).toFixed(1)}% vs{' '}
+                              {(decision.analysis.marketProbability * 100).toFixed(1)}%
+                            </>
+                          )}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[0.62rem]">{short(decision.id, 6, 4)}</span>
                   </button>
                 </li>
               ))}
@@ -153,8 +175,8 @@ function AnchorRow({ agentId, anchor }: { agentId: string; anchor: ConcordiumAnc
                 </span>
               </div>
               <p className="mt-1.5 font-mono text-[0.65rem] leading-relaxed text-muted">
-                leaf {short(proof.data.proof.leaf, 10, 6)} · index {proof.data.proof.index} of{' '}
-                {proof.data.proof.size} · path of {proof.data.proof.path.length}
+                market {short(proof.data.context?.marketId, 10, 6)} · leaf {short(proof.data.proof.leaf, 10, 6)} · index{' '}
+                {proof.data.proof.index} of {proof.data.proof.size} · path of {proof.data.proof.path.length}
               </p>
               <p className="mt-1 text-[0.65rem] text-muted">{proof.data.decision.reasoning}</p>
             </div>

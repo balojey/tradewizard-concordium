@@ -24,7 +24,25 @@ The commands share the modules the Lambdas use — `decision-root.ts` for the Me
 
 The `--file` input is an array of `portfolio_manager_decisions` rows, exactly as the database returns them (`portfolio_manager_decisions` column names, ISO timestamps with milliseconds). Rows are sorted by `created_at, id` on load — the same order the anchoring job uses — because ordering is part of the commitment.
 
-## Executed on testnet (17 Nov 2026)
+## Executed on testnet — real market data (23 Nov 2026)
+
+The deployed demo no longer anchors sample rows. Three live Polymarket markets
+were analysed by the 14-agent pipeline (21 LLM calls each, ~65s), each came back
+`NO_TRADE` because the consensus and market probabilities were within the edge
+threshold, and the trade executor recorded those refusals as decisions. That
+epoch is what is pinned on chain:
+
+| | |
+| --- | --- |
+| Decisions | 3, each linked to a real `analysis_results` row |
+| Markets | NVIDIA/Jensen Huang · NVIDIA CEO by 2028 · Yokohama bout |
+| Root | `c6dc108152324cae0c85903ca8369b2c43f2596fe63aa5f86b35537d8602514e` |
+| Anchored | tx `50e859b8…` |
+
+The workflow below still works from a JSON file (`--file`) for offline testing;
+the running system uses the database.
+
+## Earlier run from a fixture file (17 Nov 2026)
 
 | | |
 | --- | --- |

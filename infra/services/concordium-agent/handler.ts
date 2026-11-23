@@ -658,11 +658,19 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
 
     return respond(200, {
       anchor: toApiAnchor(anchor),
-      decisions: decisions.map((decision) => ({
+      decisions: decisions.map((decision, index) => ({
         id: decision.id,
         action: decision.action,
         positionDirection: decision.positionDirection,
         createdAt: decision.createdAt,
+        /** Context, not part of the leaf: which market, and what the analysis said. */
+        marketId: rows[index]?.market_id ?? null,
+        analysis: {
+          recommendation: rows[index]?.recommendation ?? null,
+          consensusProbability: rows[index]?.consensus_probability ?? null,
+          marketProbability: rows[index]?.market_probability_at_execution ?? null,
+          edge: rows[index]?.edge ?? null,
+        },
         leaf: decisionLeaf(decision),
       })),
     });
@@ -741,6 +749,8 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
     return respond(200, {
       anchor: toApiAnchor(anchor),
       decision: decisions[index],
+      /** Display context only; the leaf above is what the root commits to. */
+      context: { marketId: rows[index]?.market_id ?? null },
       leafVersion: DECISION_LEAF_VERSION,
       proof,
       rootHash: anchor.root_hash,

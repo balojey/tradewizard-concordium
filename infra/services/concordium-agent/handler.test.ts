@@ -653,6 +653,7 @@ describe('anchors and inclusion proofs', () => {
     {
       id: 'decision-1',
       session_id: 'session-1',
+      market_id: '0xmarket1',
       analysis_result_id: 'analysis-1',
       action: 'enter',
       edge_met: true,
@@ -666,6 +667,7 @@ describe('anchors and inclusion proofs', () => {
     {
       id: 'decision-2',
       session_id: 'session-1',
+      market_id: '0xmarket1',
       analysis_result_id: 'analysis-2',
       action: 'skip',
       edge_met: false,
@@ -679,6 +681,7 @@ describe('anchors and inclusion proofs', () => {
     {
       id: 'decision-3',
       session_id: 'session-2',
+      market_id: '0xmarket2',
       analysis_result_id: 'analysis-3',
       action: 'exit',
       edge_met: true,
@@ -926,7 +929,12 @@ describe('anchors and inclusion proofs', () => {
     expect(result.statusCode).toBe(200);
     const payload = parse(result);
     expect(payload.decisions).toHaveLength(3);
-    expect(payload.decisions[0]).toMatchObject({ id: 'decision-1', action: 'enter', positionDirection: 'YES' });
+    expect(payload.decisions[0]).toMatchObject({
+      id: 'decision-1',
+      action: 'enter',
+      positionDirection: 'YES',
+      marketId: '0xmarket1',
+    });
     expect(payload.decisions[0].leaf).toMatch(/^[0-9a-f]{64}$/);
     // Reasoning must not leak through the enumeration route.
     expect(payload.decisions[0].reasoning).toBeUndefined();
