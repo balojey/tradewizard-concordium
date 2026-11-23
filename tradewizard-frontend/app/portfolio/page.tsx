@@ -15,6 +15,7 @@ import { useCurrentPlan } from '@/hooks/useCurrentPlan';
 import { UpgradePrompt } from '@/components/ui/UpgradePrompt';
 import { useTrading } from '@/providers/TradingProvider';
 import { WalletBalanceCard } from '@/components/portfolio/WalletBalanceCard';
+import { TrustPanel } from '@/components/concordium/TrustPanel';
 import { WithdrawModal } from '@/components/portfolio/WithdrawModal';
 import { DepositModal } from '@/components/portfolio/DepositModal';
 import { BridgeWithdrawModal } from '@/components/portfolio/BridgeWithdrawModal';
@@ -143,6 +144,10 @@ function PortfolioPageContent() {
             onDeposit={() => setDepositOpen(true)}
             onBridgeWithdraw={() => setBridgeWithdrawOpen(true)}
           />
+        </div>
+
+        <div className="mt-4">
+          <TrustPanel />
         </div>
         <WithdrawModal open={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
         <DepositModal open={depositOpen} onClose={() => setDepositOpen(false)} />

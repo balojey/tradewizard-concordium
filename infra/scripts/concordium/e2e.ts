@@ -350,6 +350,18 @@ async function main(): Promise<void> {
     const anchorsBody = await anchors.json();
     check('anchors listed', anchors.status === 200 && (anchorsBody.anchors ?? []).length > 0, anchorsBody);
 
+    if (fixtureAnchor) {
+      console.log('\nEpoch decisions (what the UI lists)');
+      const epoch = await fetch(
+        `${cfg.api}/concordium/agents/${fixtureAgentId}/anchors/${fixtureAnchor}/decisions`,
+        { headers: authHeaders },
+      );
+      const epochBody = await epoch.json();
+      check('decisions listed', epoch.status === 200 && (epochBody.decisions ?? []).length > 0, epochBody);
+      check('each decision carries a leaf', /^[0-9a-f]{64}$/.test(epochBody.decisions?.[0]?.leaf ?? ''), epochBody.decisions?.[0]);
+      check('reasoning is not exposed by the list', epochBody.decisions?.[0]?.reasoning === undefined);
+    }
+
     if (fixtureAnchor && fixtureDecision) {
       console.log('\nInclusion proof');
       const proof = await fetch(
@@ -383,6 +395,22 @@ async function main(): Promise<void> {
   check('unknown agent 404s', missing.status === 404, missing.status);
   const junk = await fetch(`${cfg.api}/concordium/agents/not-a-uuid/card`);
   check('non-uuid card id 404s', junk.status === 404, junk.status);
+
+  if (!process.argv.includes('--keep')) {
+    // The run creates an agent to exercise the write path; unless asked to keep
+    // it, remove the ones this test user accumulated so the table stays honest.
+    const removed = await withDb(async (client) => {
+      const result = await client.query(
+        `DELETE FROM concordium_agents
+          WHERE token_id IS NULL
+            AND user_id = (SELECT id FROM users WHERE cognito_sub = $1)
+          RETURNING id`,
+        [sub],
+      );
+      return result.rowCount ?? 0;
+    });
+    console.log(`cleaned up ${removed} test agent row(s)`);
+  }
 
   console.log(`\n${passed} checks passed. agent ${agentId} (token ${TOKEN_ID})\n`);
 }

@@ -886,6 +886,28 @@ describe('anchors and inclusion proofs', () => {
     expect(seen).toEqual([]);
   });
 
+  it('lists the decisions an epoch committed to, without their reasoning', async () => {
+    const s = await setup();
+    const anchor = anchorFor(s.id);
+    s.anchors.anchors.push(anchor);
+    s.anchors.decisions.push(...DECISIONS);
+
+    const result = await run(s.deps)(
+      event({
+        resource: '/concordium/agents/{id}/anchors/{anchorId}/decisions',
+        pathParameters: { id: s.id, anchorId: anchor.id },
+      }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    const payload = parse(result);
+    expect(payload.decisions).toHaveLength(3);
+    expect(payload.decisions[0]).toMatchObject({ id: 'decision-1', action: 'enter', positionDirection: 'YES' });
+    expect(payload.decisions[0].leaf).toMatch(/^[0-9a-f]{64}$/);
+    // Reasoning must not leak through the enumeration route.
+    expect(payload.decisions[0].reasoning).toBeUndefined();
+  });
+
   it('lists anchors and flags the ones still awaiting a signature', async () => {
     const s = await setup();
     const staged = anchorFor(s.id);

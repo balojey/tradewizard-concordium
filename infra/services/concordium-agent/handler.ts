@@ -13,6 +13,8 @@
  *   GET  /concordium/agents/{id}/anchors   → anchored epochs for the agent
  *   GET  /concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}
  *                                          → inclusion proof for one decision
+ *   GET  /concordium/agents/{id}/anchors/{anchorId}/decisions
+ *                                          → the decisions committed by that epoch
  *
  * Why the split: the registry holds no keys, so minting is an operator action
  * driven by `infra/scripts/concordium/agent.mjs`. This API owns the state around
@@ -44,6 +46,7 @@ import { assertCardHash, isPubliclyHostableUri } from '../shared/concordium/agen
 import {
   buildInclusionProof,
   computeDecisionRoot,
+  decisionLeaf,
   DECISION_LEAF_VERSION,
   verifyInclusionProof,
 } from '../shared/concordium/decision-root';
@@ -417,6 +420,45 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
   }
 
   /**
+   * The decisions an epoch committed to: enough for a subscriber to recognise
+   * their own trades and to ask for a proof of any of them.
+   *
+   * Only the identity of the decision and its leaf are returned — the reasoning
+   * text stays behind the per-decision proof so the endpoint cannot be used to
+   * enumerate another user's analysis.
+   */
+  async function listEpochDecisions(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const userId = await authenticatedUserId(event);
+    const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
+    const anchorId = event.pathParameters?.anchorId;
+    if (!anchorId || !UUID_RE.test(anchorId)) {
+      throw new HttpError(404, 'Anchor not found', 'anchor_not_found');
+    }
+
+    const anchor = await deps.anchors.getAnchorForAgent(userId, agent.id, anchorId);
+    if (!anchor) throw new HttpError(404, 'Anchor not found', 'anchor_not_found');
+
+    const rows = await deps.anchors.listDecisionsInEpoch(
+      userId,
+      anchor.epoch_start,
+      anchor.epoch_end,
+      anchor.decision_count,
+    );
+    const decisions = rows.map(toAnchorableDecision);
+
+    return respond(200, {
+      anchor: toApiAnchor(anchor),
+      decisions: decisions.map((decision) => ({
+        id: decision.id,
+        action: decision.action,
+        positionDirection: decision.positionDirection,
+        createdAt: decision.createdAt,
+        leaf: decisionLeaf(decision),
+      })),
+    });
+  }
+
+  /**
    * Inclusion proof for one decision in one anchored epoch.
    *
    * The epoch is rebuilt from the same rows the anchor was computed over, in the
@@ -522,6 +564,9 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       if (route === '/concordium/agents/{id}/anchors' && method === 'GET') return await listAnchors(event);
       if (route === '/concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}' && method === 'GET') {
         return await decisionProof(event);
+      }
+      if (route === '/concordium/agents/{id}/anchors/{anchorId}/decisions' && method === 'GET') {
+        return await listEpochDecisions(event);
       }
       return respond(404, { error: 'Not found', route, method });
     } catch (error) {

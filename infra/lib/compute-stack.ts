@@ -1447,10 +1447,14 @@ export class ComputeStack extends cdk.Stack {
     // is about someone's own trade history.
     const concordiumAnchors = concordiumAgentById.addResource('anchors');
     concordiumAnchors.addMethod('GET', concordiumIntegration, authMethodOptions);
-    concordiumAnchors
-      .addResource('{anchorId}')
+
+    const concordiumAnchorById = concordiumAnchors.addResource('{anchorId}');
+    concordiumAnchorById
       .addResource('proof')
       .addResource('{decisionId}')
+      .addMethod('GET', concordiumIntegration, authMethodOptions);
+    concordiumAnchorById
+      .addResource('decisions')
       .addMethod('GET', concordiumIntegration, authMethodOptions);
 
     const concordiumAgentCard = concordiumAgentById.addResource('card');

@@ -79,7 +79,7 @@ the post-confirmation trigger would create, and then asserts:
 | Hosting | public 200; served SHA-256 equals the pinned hash; `no-store` |
 | Mint | a token already claimed by another agent → 409 |
 | Verify | live registry call → `trust: verified`, no error issues |
-| Anchors | epoch list is non-empty |
+| Anchors | epoch list is non-empty; epoch decisions expose a leaf but no reasoning |
 | Proof | 200; recomputes to the root; on-chain value matches |
 | Tamper | decision edited → 409 `epoch_not_reproducible`, then restored |
 | Guards | unknown agent 404; non-UUID card id 404 |
@@ -92,9 +92,13 @@ path only.
 ## What is still untested
 
 - **x402 payments** — not built. Nothing to test.
-- **Frontend surfaces** — there is no Concordium UI yet; verification is reached
-  through the API and the CLI. When a badge panel exists, it should be exercised
-  against `/concordium/agents/{id}/verify` and the public card URL.
+- **The accountability panel** (`components/concordium/TrustPanel.tsx`) is
+  type-checked and included in a production build, and every endpoint it calls
+  is covered by the e2e (agents, verify, anchors, epoch decisions, proof). What
+  is *not* automated is the visual check: it needs a magic-link login, so the
+  render itself is verified by eye. Its card-integrity row hashes the served
+  bytes with `crypto.subtle` in the browser, which is the one check that does
+  not go through our API.
 - **Ownership checks on mint** — the API records whatever token address it is
   given; canonical validity is decided by the registry at verification time.
   Making `mint` call the registry's `token_address` tool and compare would close
