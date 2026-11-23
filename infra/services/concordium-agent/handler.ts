@@ -15,6 +15,8 @@
  *                                          → inclusion proof for one decision
  *   GET  /concordium/agents/{id}/anchors/{anchorId}/decisions
  *                                          → the decisions committed by that epoch
+ *   POST /concordium/agents/{id}/payload   → sign-ready payload for one registration step
+ *   POST /concordium/agents/{id}/confirm   → record a step that was signed and submitted
  *
  * Why the split: the registry holds no keys, so minting is an operator action
  * driven by `infra/scripts/concordium/agent.mjs`. This API owns the state around
@@ -71,6 +73,16 @@ const TOKEN_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{10,60}$/;
  * invalid uuid literal and the error surfaces as a 500 instead of a 404.
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TX_HASH_RE = /^[0-9a-f]{64}$/i;
+/** CIS-8 External Key Registry on the network the API is configured for. */
+const CIS8_CONTRACT = { index: 12801, subindex: 0 };
+
+/**
+ * Registration is four separate on-chain writes, each signed by the account
+ * owner. The API builds the payload and records the outcome; it never signs.
+ */
+type RegistrationStep = 'register' | 'set-uri' | 'cis8-canonical' | 'cis8-register' | 'external-reference';
+const STEPS: RegistrationStep[] = ['register', 'set-uri', 'cis8-canonical', 'cis8-register', 'external-reference'];
 const HEX_RE = /^[0-9a-fA-F]+$/;
 const NETWORKS = new Set(['devnet', 'testnet', 'mainnet']);
 /** secp256k1 public keys: 33-byte compressed or 65-byte uncompressed. */
@@ -162,6 +174,16 @@ function toApiAgent(row: ConcordiumAgentRow) {
   };
 }
 
+function cis8KeyFrom(body: Record<string, unknown>): { namespace: string; keyType: string; publicKeyHex: string } {
+  const namespace = typeof body.namespace === 'string' && body.namespace ? body.namespace : 'eip155:137';
+  const keyType = typeof body.keyType === 'string' && body.keyType ? body.keyType : 'secp256k1-compressed';
+  const publicKeyHex = String(body.publicKeyHex ?? '').replace(/^0x/i, '').toLowerCase();
+  if (!HEX_RE.test(publicKeyHex) || publicKeyHex.length < 64) {
+    throw new HttpError(400, '`publicKeyHex` is required', 'missing_public_key');
+  }
+  return { namespace, keyType, publicKeyHex };
+}
+
 function cardUrlFor(deps: ConcordiumAgentDeps, agentId: string): string | undefined {
   if (!deps.publicBaseUrl) return undefined;
   return `${deps.publicBaseUrl.replace(/\/+$/, '')}/concordium/agents/${agentId}/card`;
@@ -183,6 +205,18 @@ function toApiAnchor(row: AnchorRow) {
     createdAt: row.created_at,
     /** Staged but not yet submitted by the operator. */
     pendingSignature: row.payload_hex !== null && row.tx_hash === null,
+  };
+}
+
+/** Normalise whatever a `build_*` tool returned into the shape a signer needs. */
+function toSignablePayload(step: RegistrationStep, built: Record<string, unknown>, metadata: Record<string, unknown>) {
+  return {
+    step,
+    contractAddress: built.contract_address,
+    receiveName: built.receive_name,
+    parameterHex: built.parameter_hex,
+    energy: built.suggested_energy,
+    metadata,
   };
 }
 
@@ -412,6 +446,182 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
   }
 
 
+  /**
+   * Return the sign-ready contract update for one registration step.
+   *
+   * The caller signs it with the account key and submits it themselves; that is
+   * what makes self-service registration possible without us holding a key.
+   */
+  async function registrationPayload(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const userId = await authenticatedUserId(event);
+    const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
+    const body = parseBody(event);
+    const step = String(body.step ?? '') as RegistrationStep;
+    if (!STEPS.includes(step)) {
+      throw new HttpError(400, `\`step\` must be one of ${STEPS.join(', ')}`, 'invalid_step');
+    }
+
+    const sender = agent.concordium_account;
+    const tokenId = agent.token_id;
+
+    switch (step) {
+      case 'register': {
+        if (agent.token_address) throw new HttpError(409, 'Agent is already registered', 'already_registered');
+        if (!agent.agent_uri || !agent.metadata_hash_hex) {
+          throw new HttpError(409, 'Publish the Agent Card before registering', 'card_missing');
+        }
+        const built = await deps.registry.callTool<Record<string, unknown>>('build_register', {
+          sender,
+          agent_uri: agent.agent_uri,
+          metadata_hash_hex: agent.metadata_hash_hex,
+        });
+        return respond(200, toSignablePayload(step, built, {
+          agentUri: agent.agent_uri,
+          metadataHashHex: agent.metadata_hash_hex,
+        }));
+      }
+
+      case 'set-uri': {
+        if (!tokenId) throw new HttpError(409, 'Register the agent before pinning a card', 'not_registered');
+        const agentUri = typeof body.agentUri === 'string' ? body.agentUri : agent.agent_uri;
+        const metadataHashHex = typeof body.metadataHashHex === 'string' ? body.metadataHashHex : agent.metadata_hash_hex;
+        if (!agentUri || !metadataHashHex) throw new HttpError(409, 'No card is published for this agent', 'card_missing');
+        if (!isPubliclyHostableUri(agentUri)) {
+          throw new HttpError(400, '`agentUri` must be a public https URL', 'invalid_agent_uri');
+        }
+        if (!/^[0-9a-fA-F]{64}$/.test(metadataHashHex)) {
+          throw new HttpError(400, '`metadataHashHex` must be a 32-byte hex SHA-256', 'invalid_hash');
+        }
+        const built = await deps.registry.callTool<Record<string, unknown>>('build_set_agent_uri', {
+          sender,
+          token_id: tokenId,
+          agent_uri: agentUri,
+          metadata_hash_hex: metadataHashHex,
+        });
+        return respond(200, toSignablePayload(step, built, { agentUri, metadataHashHex: metadataHashHex.toLowerCase() }));
+      }
+
+      // The external key proves control of the Polymarket signer, so the client
+      // needs the exact bytes to sign before it can produce the registration.
+      case 'cis8-canonical': {
+        const { namespace, keyType, publicKeyHex } = cis8KeyFrom(body);
+        const canonical = await deps.registry.callTool<Record<string, unknown>>('build_cis8_canonical_bytes', {
+          concordium_account: sender,
+          external_namespace: namespace,
+          external_key_namespace: namespace,
+          external_key_type: keyType,
+          external_public_key_hex: publicKeyHex,
+          proof_scheme: String(body.proofScheme ?? 'ethereum-personal-sign'),
+        });
+        return respond(200, {
+          step,
+          bytesHex: canonical.bytes_hex,
+          byteLength: canonical.byte_length,
+          prefixUtf8: canonical.prefix_utf8,
+          proofScheme: String(body.proofScheme ?? 'ethereum-personal-sign'),
+          metadata: { namespace, keyType, publicKeyHex },
+        });
+      }
+
+      case 'cis8-register': {
+        const { namespace, keyType, publicKeyHex } = cis8KeyFrom(body);
+        const signatureHex = String(body.signatureHex ?? '').replace(/^0x/i, '');
+        if (!/^[0-9a-fA-F]{2,}$/.test(signatureHex)) {
+          throw new HttpError(400, '`signatureHex` is required (sign the canonical bytes)', 'missing_signature');
+        }
+        const built = await deps.registry.callTool<Record<string, unknown>>('build_cis8_register', {
+          sender,
+          external_key: { namespace, key_type: keyType, public_key_hex: publicKeyHex },
+          proof: { scheme: String(body.proofScheme ?? 'ethereum-personal-sign'), signature_hex: signatureHex },
+          metadata: [
+            { key: 'venue', value: 'polymarket' },
+            { key: 'wallet', value: String(body.walletAddress ?? '') },
+            { key: 'signature_type', value: String(body.signatureType ?? '2') },
+          ],
+        });
+        return respond(200, toSignablePayload(step, built, { namespace, keyType, publicKeyHex }));
+      }
+
+      case 'external-reference': {
+        if (!tokenId) throw new HttpError(409, 'Register the agent before linking a key', 'not_registered');
+        const { namespace, keyType, publicKeyHex } = cis8KeyFrom(body);
+        const built = await deps.registry.callTool<Record<string, unknown>>('build_set_external_reference', {
+          sender,
+          token_id: tokenId,
+          external_reference: {
+            contract_address: CIS8_CONTRACT,
+            kind: 'Cis8',
+            key: { namespace, key_type: keyType, public_key_hex: publicKeyHex },
+          },
+        });
+        return respond(200, toSignablePayload(step, built, { namespace, keyType, publicKeyHex }));
+      }
+
+      default:
+        throw new HttpError(400, 'Unsupported step', 'invalid_step');
+    }
+  }
+
+  /** Record a registration step that the operator signed and submitted. */
+  async function confirmStep(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const userId = await authenticatedUserId(event);
+    const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
+    const body = parseBody(event);
+    const step = String(body.step ?? '') as RegistrationStep;
+    if (!STEPS.includes(step) || step === 'cis8-canonical') {
+      throw new HttpError(400, '`step` must be a submitted step', 'invalid_step');
+    }
+    const txHash = String(body.txHash ?? '').replace(/^0x/i, '');
+    if (!TX_HASH_RE.test(txHash)) {
+      throw new HttpError(400, '`txHash` must be a 64-character hex transaction hash', 'invalid_tx_hash');
+    }
+
+    switch (step) {
+      case 'register': {
+        const tokenId = requireString(body, 'tokenId', 'missing_token_id');
+        const tokenAddress = requireString(body, 'tokenAddress', 'missing_token_address');
+        if (!/^\d+$/.test(tokenId)) throw new HttpError(400, '`tokenId` must be decimal', 'invalid_token_id');
+        if (!TOKEN_ADDRESS_RE.test(tokenAddress)) {
+          throw new HttpError(400, '`tokenAddress` must be a CIS-2 token address', 'invalid_token_address');
+        }
+        const saved = await deps.repo.recordMint(agent.id, { tokenId, tokenAddress, txHash });
+        return respond(200, { agent: toApiAgent(saved) });
+      }
+
+      case 'set-uri': {
+        const agentUri = requireString(body, 'agentUri', 'missing_agent_uri');
+        const metadataHashHex = requireString(body, 'metadataHashHex', 'missing_hash');
+        if (!isPubliclyHostableUri(agentUri)) {
+          throw new HttpError(400, '`agentUri` must be a public https URL', 'invalid_agent_uri');
+        }
+        if (!/^[0-9a-fA-F]{64}$/.test(metadataHashHex)) {
+          throw new HttpError(400, '`metadataHashHex` must be a 32-byte hex SHA-256', 'invalid_hash');
+        }
+        const saved = await deps.repo.recordUri(agent.id, {
+          agentUri,
+          metadataHashHex: metadataHashHex.toLowerCase(),
+          txHash,
+        });
+        return respond(200, { agent: toApiAgent(saved) });
+      }
+
+      case 'cis8-register': {
+        const { namespace, keyType, publicKeyHex } = cis8KeyFrom(body);
+        const saved = await deps.repo.recordExternalKey(agent.id, {
+          namespace,
+          keyHex: publicKeyHex,
+          txHash,
+        });
+        return respond(200, { agent: toApiAgent(saved) });
+      }
+
+      default: {
+        await deps.repo.recordTx(agent.id, txHash);
+        return respond(200, { agent: toApiAgent(agent), recorded: step });
+      }
+    }
+  }
+
   async function listAnchors(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     const userId = await authenticatedUserId(event);
     const agent = await ownedAgent(userId, event.pathParameters?.id ?? '');
@@ -560,6 +770,8 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       if (route === '/concordium/agents/{id}/card' && method === 'GET') return await getCard(event);
       if (route === '/concordium/agents/{id}/card' && method === 'POST') return await putCard(event);
       if (route === '/concordium/agents/{id}/mint' && method === 'POST') return await recordMint(event);
+      if (route === '/concordium/agents/{id}/payload' && method === 'POST') return await registrationPayload(event);
+      if (route === '/concordium/agents/{id}/confirm' && method === 'POST') return await confirmStep(event);
       if (route === '/concordium/agents/{id}/verify' && method === 'POST') return await verifyAgent(event);
       if (route === '/concordium/agents/{id}/anchors' && method === 'GET') return await listAnchors(event);
       if (route === '/concordium/agents/{id}/anchors/{anchorId}/proof/{decisionId}' && method === 'GET') {

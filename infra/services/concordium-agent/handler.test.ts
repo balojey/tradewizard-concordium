@@ -18,6 +18,7 @@ import type {
 
 const ACCOUNT = '3dt3UMPzRASZndjmKpSWgCP2HhmoxZrgs8FDPtZjNHZzj13hhB';
 const OTHER_ACCOUNT = '4FoWbP7qANwED5SkWgiEt7UEYgGuBTomNBePZ25YQ2oJTqXpTY';
+const TOKEN_ADDRESS = 'JyP9XfKVsCUMaaEsDtyoS';
 const CARD = '{\n  "name": "TradeWizard Trade Agent",\n  "version": "1.0.0"\n}';
 const CARD_HASH = '5f1cd2c5b5e2b8a3ba3f2ef0f0e5e65f34c7fbfe6ea8d46e57b3f0b7a4a5c9d1';
 
@@ -78,6 +79,29 @@ function memoryRepo(): ConcordiumAgentRepository & { rows: Map<string, Concordiu
         token_address: input.tokenAddress,
         last_tx_hash: input.txHash,
         status: 'active',
+      });
+    },
+    async recordUri(id, input) {
+      const row = rows.get(id)!;
+      return put({
+        ...row,
+        agent_uri: input.agentUri,
+        metadata_hash_hex: input.metadataHashHex,
+        last_tx_hash: input.txHash,
+        badge_trust: 'unknown',
+      });
+    },
+    async recordTx(id, txHash) {
+      const row = rows.get(id)!;
+      put({ ...row, last_tx_hash: txHash });
+    },
+    async recordExternalKey(id, input) {
+      const row = rows.get(id)!;
+      return put({
+        ...row,
+        external_key_namespace: input.namespace,
+        external_key_hex: input.keyHex,
+        last_tx_hash: input.txHash,
       });
     },
     async recordBadgeCheck(id, trust: BadgeTrust) {
@@ -948,5 +972,189 @@ describe('malformed ids', () => {
     );
     expect(result.statusCode).toBe(404);
     expect(parse(result).code).toBe('not_found');
+  });
+});
+
+describe('self-serve registration', () => {
+  const TX = 'ab'.repeat(32);
+
+  function registryReturning(responses: Record<string, unknown>) {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const registry: AgentRegistryClient = {
+      network: 'testnet',
+      callTool: (async (name: string, args: Record<string, unknown>) => {
+        calls.push({ name, args });
+        return responses[name] ?? {};
+      }) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+    return { registry, calls };
+  }
+
+  const BUILT = {
+    contract_address: { index: 12802, subindex: 0 },
+    receive_name: 'CIS-8004.register',
+    parameter_hex: 'beef',
+    suggested_energy: 30000,
+  };
+
+  async function agentWithCard(registry: AgentRegistryClient) {
+    const store = makeDeps();
+    store.deps.registry = registry;
+    const created = await run(store.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents', body: body({ concordiumAccount: ACCOUNT }) }),
+    );
+    const id = parse(created).agent.id as string;
+    const { createHash } = await import('crypto');
+    await run(store.deps)(
+      event({
+        httpMethod: 'POST',
+        resource: '/concordium/agents/{id}/card',
+        pathParameters: { id },
+        body: body({
+          cardJson: CARD,
+          metadataHashHex: createHash('sha256').update(CARD).digest('hex'),
+          agentUri: 'https://tradewizard.app/agents/1/card.json',
+        }),
+      }),
+    );
+    return { ...store, id };
+  }
+
+  const payloadEvent = (id: string, step: string, extra: Record<string, unknown> = {}) =>
+    event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/payload', pathParameters: { id }, body: body({ step, ...extra }) });
+
+  const confirmEvent = (id: string, payload: Record<string, unknown>) =>
+    event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/confirm', pathParameters: { id }, body: body(payload) });
+
+  it('refuses to build a register payload before the card is published', async () => {
+    const { registry } = registryReturning({ build_register: BUILT });
+    const store = makeDeps();
+    store.deps.registry = registry;
+    const created = await run(store.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents', body: body({ concordiumAccount: ACCOUNT }) }),
+    );
+
+    const result = await run(store.deps)(payloadEvent(parse(created).agent.id, 'register'));
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('card_missing');
+  });
+
+  it('returns a sign-ready register payload with the card it commits to', async () => {
+    const { registry, calls } = registryReturning({ build_register: BUILT });
+    const s = await agentWithCard(registry);
+
+    const result = await run(s.deps)(payloadEvent(s.id, 'register'));
+    expect(result.statusCode).toBe(200);
+
+    const payload = parse(result);
+    expect(payload).toMatchObject({
+      step: 'register',
+      contractAddress: { index: 12802, subindex: 0 },
+      receiveName: 'CIS-8004.register',
+      parameterHex: 'beef',
+      energy: 30000,
+    });
+    expect(payload.metadata.agentUri).toBe('https://tradewizard.app/agents/1/card.json');
+    expect(calls[0]).toMatchObject({ name: 'build_register' });
+  });
+
+  it('refuses a register payload for an agent that is already registered', async () => {
+    const { registry } = registryReturning({ build_register: BUILT });
+    const s = await agentWithCard(registry);
+    s.repo.rows.get(s.id)!.token_address = TOKEN_ADDRESS;
+
+    const result = await run(s.deps)(payloadEvent(s.id, 'register'));
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('already_registered');
+  });
+
+  it('refuses a set-uri payload before the agent is registered', async () => {
+    const { registry } = registryReturning({ build_set_agent_uri: BUILT });
+    const s = await agentWithCard(registry);
+
+    const result = await run(s.deps)(payloadEvent(s.id, 'set-uri'));
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('not_registered');
+  });
+
+  it('returns the canonical bytes a Polymarket signer must sign', async () => {
+    const { registry } = registryReturning({
+      build_cis8_canonical_bytes: {
+        bytes_hex: 'deadbeef',
+        byte_length: 4,
+        prefix_utf8: 'CIS-8/v1/canonical',
+      },
+    });
+    const s = await agentWithCard(registry);
+
+    const result = await run(s.deps)(
+      payloadEvent(s.id, 'cis8-canonical', { publicKeyHex: '02' + 'ab'.repeat(32) }),
+    );
+    expect(result.statusCode).toBe(200);
+    expect(parse(result)).toMatchObject({
+      step: 'cis8-canonical',
+      bytesHex: 'deadbeef',
+      byteLength: 4,
+      proofScheme: 'ethereum-personal-sign',
+      metadata: { namespace: 'eip155:137', keyType: 'secp256k1-compressed' },
+    });
+  });
+
+  it('rejects an unknown step', async () => {
+    const { registry } = registryReturning({});
+    const s = await agentWithCard(registry);
+    const result = await run(s.deps)(payloadEvent(s.id, 'delete-everything'));
+    expect(result.statusCode).toBe(400);
+    expect(parse(result).code).toBe('invalid_step');
+  });
+
+  it('records a confirmed register step', async () => {
+    const { registry } = registryReturning({});
+    const s = await agentWithCard(registry);
+
+    const result = await run(s.deps)(
+      confirmEvent(s.id, { step: 'register', txHash: TX, tokenId: '1224', tokenAddress: TOKEN_ADDRESS }),
+    );
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).agent).toMatchObject({ status: 'active', tokenAddress: TOKEN_ADDRESS, lastTxHash: TX });
+  });
+
+  it('records a confirmed set-uri step and clears cached badge trust', async () => {
+    const { registry } = registryReturning({});
+    const s = await agentWithCard(registry);
+    s.repo.rows.get(s.id)!.badge_trust = 'verified';
+
+    const hash = 'cd'.repeat(32);
+    const result = await run(s.deps)(
+      confirmEvent(s.id, { step: 'set-uri', txHash: TX, agentUri: 'https://tradewizard.app/agents/2/card.json', metadataHashHex: hash }),
+    );
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).agent).toMatchObject({
+      agentUri: 'https://tradewizard.app/agents/2/card.json',
+      metadataHashHex: hash,
+      badgeTrust: 'unknown',
+    });
+  });
+
+  it('stores the CIS-8 key on a confirmed bind', async () => {
+    const { registry } = registryReturning({});
+    const s = await agentWithCard(registry);
+    const key = '02' + 'ab'.repeat(32);
+
+    const result = await run(s.deps)(
+      confirmEvent(s.id, { step: 'cis8-register', txHash: TX, publicKeyHex: key, namespace: 'eip155:137' }),
+    );
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).agent).toMatchObject({ externalKeyHex: key, externalKeyNamespace: 'eip155:137' });
+  });
+
+  it('rejects a malformed transaction hash', async () => {
+    const { registry } = registryReturning({});
+    const s = await agentWithCard(registry);
+    const result = await run(s.deps)(confirmEvent(s.id, { step: 'register', txHash: 'nope', tokenId: '1', tokenAddress: TOKEN_ADDRESS }));
+    expect(result.statusCode).toBe(400);
+    expect(parse(result).code).toBe('invalid_tx_hash');
   });
 });

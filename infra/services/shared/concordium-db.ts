@@ -60,6 +60,15 @@ export interface ConcordiumAgentRepository {
   saveCard(id: string, input: { agentUri: string; metadataHashHex: string; cardJson: string }): Promise<ConcordiumAgentRow>;
   recordMint(id: string, input: { tokenId: string; tokenAddress: string; txHash: string }): Promise<ConcordiumAgentRow>;
   recordBadgeCheck(id: string, trust: BadgeTrust): Promise<void>;
+  /** Record a re-pinned card after setAgentURI. */
+  recordUri(id: string, input: { agentUri: string; metadataHashHex: string; txHash: string }): Promise<ConcordiumAgentRow>;
+  /** Record a submitted transaction hash without changing agent state. */
+  recordTx(id: string, txHash: string): Promise<void>;
+  /** Record the CIS-8 binding after registerExternalKey. */
+  recordExternalKey(
+    id: string,
+    input: { namespace: string; keyHex: string; txHash: string },
+  ): Promise<ConcordiumAgentRow>;
 }
 
 const COLUMNS = `
@@ -160,6 +169,38 @@ export function createPgRepository(): ConcordiumAgentRepository {
             WHERE id = $1
             RETURNING ${COLUMNS}`,
           [id, input.tokenId, input.tokenAddress, input.txHash],
+        );
+        return rows[0];
+      });
+    },
+
+    async recordUri(id, input) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<ConcordiumAgentRow>(
+          `UPDATE concordium_agents
+              SET agent_uri = $2, metadata_hash_hex = $3, last_tx_hash = $4, badge_trust = 'unknown'
+            WHERE id = $1
+            RETURNING ${COLUMNS}`,
+          [id, input.agentUri, input.metadataHashHex.toLowerCase(), input.txHash],
+        );
+        return rows[0];
+      });
+    },
+
+    async recordTx(id, txHash) {
+      await withClient(async (client) => {
+        await client.query(`UPDATE concordium_agents SET last_tx_hash = $2 WHERE id = $1`, [id, txHash]);
+      });
+    },
+
+    async recordExternalKey(id, input) {
+      return withClient(async (client) => {
+        const { rows } = await client.query<ConcordiumAgentRow>(
+          `UPDATE concordium_agents
+              SET external_key_namespace = $2, external_key_hex = $3, last_tx_hash = $4
+            WHERE id = $1
+            RETURNING ${COLUMNS}`,
+          [id, input.namespace, input.keyHex.toLowerCase(), input.txHash],
         );
         return rows[0];
       });

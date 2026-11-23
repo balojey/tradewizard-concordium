@@ -83,6 +83,7 @@ the post-confirmation trigger would create, and then asserts:
 | Proof | 200; recomputes to the root; on-chain value matches |
 | Tamper | decision edited → 409 `epoch_not_reproducible`, then restored |
 | Guards | unknown agent 404; non-UUID card id 404 |
+| Self-serve registration (`--self-serve`) | API returns a sign-ready payload; a local signature submits it; the minted token is confirmed back into the API; a mismatched badge is *not* reported as verified |
 
 `--link-fixtures` repoints the seeded agent and its sessions at the test user so
 the authenticated read paths run against real data (token 1224, a real anchored
@@ -101,8 +102,9 @@ path only.
   not go through our API.
 - **Ownership checks on mint** — the API records whatever token address it is
   given; canonical validity is decided by the registry at verification time.
-  Making `mint` call the registry's `token_address` tool and compare would close
-  that gap.
+- **Browser wallet signing** — `payload`/`confirm` are proven against the API with
+  a local signer, but no wallet connector is wired into the UI yet, so the
+  signature is still produced outside the browser.
 - **Concurrency** — two simultaneous anchors for one agent are covered by a
   unique index and a duplicate-detection test, but not by a load test.
 

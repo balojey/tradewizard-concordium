@@ -22,6 +22,8 @@
 
 import { readFileSync } from 'node:fs';
 import { createHmac, randomUUID } from 'node:crypto';
+import { submitPayload } from './submit';
+import { createAgentRegistryClient } from '../../services/shared/concordium/mcp';
 import { join } from 'node:path';
 
 const CARD_PATH = join(__dirname, '../../../docs/agents/tradewizard-agent-card.json');
@@ -313,6 +315,71 @@ async function main(): Promise<void> {
   const servedHash = createHash('sha256').update(servedBytes).digest('hex');
   check('served bytes equal the pinned hash', servedHash === CARD_HASH, { servedHash, CARD_HASH });
   check('cache-control is no-store', served.headers.get('cache-control') === 'no-store', served.headers.get('cache-control'));
+
+  // Self-serve registration: the API builds the payload, any signer submits it.
+  // This is the path a wallet-connector UI would take, minus the UI.
+  if (process.argv.includes('--self-serve')) {
+    console.log('\nSelf-serve registration (API payload + local signature)');
+    const payloadResponse = await fetch(`${cfg.api}/concordium/agents/${agentId}/payload`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ step: 'register' }),
+    });
+    const signable = await payloadResponse.json();
+    check('register payload returned', payloadResponse.status === 200, signable);
+    check('payload names the CIS-8004 contract', signable.contractAddress?.index === 12802, signable.contractAddress);
+    check('payload carries a parameter', typeof signable.parameterHex === 'string' && signable.parameterHex.length > 0);
+
+    const submitted = await submitPayload({
+      contract_address: signable.contractAddress,
+      receive_name: signable.receiveName,
+      parameter_hex: signable.parameterHex,
+      suggested_energy: signable.energy,
+    });
+    check('payload signed and submitted', typeof submitted.hash === 'string', submitted);
+    const txHash = String(submitted.hash);
+
+    // Find the token the mint just created (newest agent carrying our card).
+    const registry = createAgentRegistryClient({ network: 'testnet' });
+    const owned: any = await registry.callTool('agents_by_owner', {
+      owner_account: process.env.CONCORDIUM_ACCOUNT,
+    });
+    const minted = (owned.agents ?? [])
+      .filter((a: any) => a.metadata_hash_hex === CARD_HASH && a.status !== 'Revoked')
+      .sort((a: any, b: any) => Number(b.token_id) - Number(a.token_id))[0];
+    check('minted agent is visible in the registry', Boolean(minted), owned.agents?.length);
+
+    const tokenAddressResp: any = await registry.callTool('token_address', {
+      token_id: minted.token_id,
+      contract_index: 12802,
+      contract_subindex: 0,
+    });
+    check('token address resolved', typeof tokenAddressResp?.token_address === 'string', tokenAddressResp);
+    const confirm = await fetch(`${cfg.api}/concordium/agents/${agentId}/confirm`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        step: 'register',
+        txHash,
+        tokenId: String(minted.token_id),
+        tokenAddress: tokenAddressResp.token_address,
+      }),
+    });
+    const confirmBody = await confirm.json();
+    check('confirm recorded the registration', confirm.status === 200, confirmBody);
+    check('agent is active after confirm', confirmBody.agent?.status === 'active', confirmBody.agent);
+
+    const verifyOwn = await fetch(`${cfg.api}/concordium/agents/${agentId}/verify`, {
+      method: 'POST',
+      headers: authHeaders,
+    });
+    const verifyOwnBody = await verifyOwn.json();
+    check('verify runs against the freshly minted token', verifyOwn.status === 200, verifyOwnBody);
+    // The card we registered still carries token 1224's badge, so the registry
+    // reports registered-not-verified. That is the check doing its job.
+    check('a mismatched badge is not reported as verified', verifyOwnBody.trust !== 'verified', verifyOwnBody);
+    console.log(`  self-serve agent token ${minted.token_id} (${tokenAddressResp.token_address}), tx ${txHash.slice(0, 16)}…`);
+  }
 
   console.log('\nRecord the mint');
   const mint = await fetch(`${cfg.api}/concordium/agents/${agentId}/mint`, {

@@ -1442,6 +1442,8 @@ export class ComputeStack extends cdk.Stack {
     concordiumAgentById.addMethod('GET', concordiumIntegration, authMethodOptions);
     concordiumAgentById.addResource('mint').addMethod('POST', concordiumIntegration, authMethodOptions);
     concordiumAgentById.addResource('verify').addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgentById.addResource('payload').addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgentById.addResource('confirm').addMethod('POST', concordiumIntegration, authMethodOptions);
 
     // Anchored epochs and per-decision inclusion proofs. Authenticated: a proof
     // is about someone's own trade history.
