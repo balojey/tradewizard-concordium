@@ -90,6 +90,42 @@ the authenticated read paths run against real data (token 1224, a real anchored
 epoch, real decisions) instead of an empty agent. Without it you get the write
 path only.
 
+## Producing a live epoch (no fixtures)
+
+The epoch anchored on token 1224 came from the real pipeline, not from a file.
+Reproducing it takes four steps, all of them the platform's own path:
+
+1. **Queue a real analysis.** Send `{requestId, marketId, userId, requestType}`
+   to the analysis FIFO queue (group id = marketId). `marketId` is the Polymarket
+   **conditionId**; the pipeline fetches the live market and runs the 14 agents.
+
+```bash
+aws sqs send-message \
+  --queue-url https://sqs.us-east-1.amazonaws.com/<account>/tw-dev-concordium-analysis-queue.fifo \
+  --message-group-id <conditionId> --message-deduplication-id <uuid> \
+  --message-body '{"requestId":"<uuid>","marketId":"<conditionId>","userId":"<user uuid>","requestType":"one_time"}'
+```
+
+2. **Let the executor decide.** With a session on that market, invoke the trade
+   executor with the analysis id and the recommendation the pipeline returned.
+   For `NO_TRADE` it records a decision and places no order.
+
+3. **Anchor.** Invoke `tw-…-concordium-anchor`; it stages a root over the new
+   decisions (three per epoch by default) and `anchor-proof.ts confirm` signs it.
+
+4. **Subscribe, so it keeps happening.** The three demo markets have active
+   **recurring** requests at a 1-day interval, so the insights page shows each
+   market and its cadence, and every run adds a decision the next anchor covers:
+
+```bash
+aws lambda invoke --function-name tw-dev-concordium-analysis-request \
+  --payload '{"body":"{\"marketId\":\"<conditionId>\",\"requestType\":\"recurring\",\"intervalSeconds\":86400}","requestContext":{"authorizer":{"claims":{"sub":"<cognito sub>"}}}}' \
+  --cli-binary-format raw-in-base64-out /tmp/out.json
+```
+
+`markets` rows are populated from Gamma so the insights page shows questions
+rather than ids.
+
 ## What is still untested
 
 - **x402 payments** — not built. Nothing to test.
