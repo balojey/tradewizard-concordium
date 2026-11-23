@@ -30,6 +30,7 @@ import {
 import { anchorMetadataKey } from '../../services/shared/concordium/anchor-metadata';
 import { submitPayload } from './submit';
 import { createPgAnchorRepository } from '../../services/shared/concordium-db';
+import { getConnectionString } from '../../services/shared/db';
 
 const NETWORK = (process.env.CONCORDIUM_NETWORK ?? 'testnet') as 'testnet' | 'mainnet' | 'devnet';
 const registry: AgentRegistryClient = createAgentRegistryClient({ network: NETWORK });
@@ -170,6 +171,51 @@ const commands: Record<string, () => Promise<void>> = {
         : 'Epoch no longer reproduces its anchored root → the proof endpoint returns\n409 epoch_not_reproducible. This is the tamper signal, not an error.',
     );
     if (tamperedRoot === root) process.exitCode = 1;
+  },
+
+  /**
+   * Edit one decision in the database so the live proof endpoint stops
+   * rebuilding its epoch. This is the demo beat: the log changes, the proof
+   * refuses. `--restore` puts the original text back.
+   *
+   * Requires DB_SECRET_ARN and DB_HOST, exactly like the seeding script.
+   */
+  async perturb() {
+    const decisionId = String(arg('decision'));
+    const restore = !!arg('restore');
+    const replacement = String(arg('reasoning', 'exited earlier, at a better price'));
+
+    const connectionString = await getConnectionString();
+    const pg = await import('pg');
+    const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } });
+
+    await client.connect();
+    try {
+      if (restore) {
+        const row = await client.query<{ reasoning: string }>(
+          `SELECT reasoning FROM portfolio_manager_decisions WHERE id = $1`,
+          [decisionId],
+        );
+        if (row.rows.length === 0) throw new Error(`decision ${decisionId} not found`);
+        const original = row.rows[0].reasoning.replace(/^\[perturbed\] /, '');
+        await client.query(`UPDATE portfolio_manager_decisions SET reasoning = $2 WHERE id = $1`, [
+          decisionId,
+          original,
+        ]);
+        console.log(`restored decision ${decisionId}`);
+      } else {
+        await client.query(
+          `UPDATE portfolio_manager_decisions
+              SET reasoning = CASE WHEN reasoning LIKE '[perturbed] %' THEN reasoning ELSE '[perturbed] ' || reasoning END
+            WHERE id = $1`,
+          [decisionId],
+        );
+        console.log(`perturbed decision ${decisionId} with: "${replacement}"`);
+        console.log('the decision row now differs from the anchored leaf; request its proof to see the 409');
+      }
+    } finally {
+      await client.end();
+    }
   },
 
   /**

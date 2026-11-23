@@ -9,7 +9,13 @@
  * Idempotent: re-running updates the same rows rather than duplicating them.
  *
  * Env: DB_SECRET_ARN (required), DB_HOST (optional, taken from the secret)
- * Usage: DB_SECRET_ARN=... npx tsx scripts/concordium/seed-demo.ts [--decisions]
+ * Usage:
+ *   DB_SECRET_ARN=... npx tsx scripts/concordium/seed-demo.ts [--decisions]
+ *   DB_SECRET_ARN=... npx tsx scripts/concordium/seed-demo.ts --attach-email you@example.com
+ *
+ * `--attach-email` points the existing agent and its decisions at a real account
+ * instead of the demo user - use it after signing in once, so the panel in the
+ * product shows the live agent rather than its empty state.
  */
 
 import { readFileSync } from 'node:fs';
@@ -50,16 +56,34 @@ async function main(): Promise<void> {
   // The card must be stored exactly as served: the on-chain hash covers these bytes.
   const cardJson = readFileSync(CARD_PATH, 'utf8');
 
+  const attachIndex = process.argv.indexOf('--attach-email');
+  const attachEmail = attachIndex > -1 ? process.argv[attachIndex + 1] : undefined;
+
   await client.connect();
   try {
-    const user = await client.query(
-      `INSERT INTO users (cognito_sub, email, display_name)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (cognito_sub) DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = now()
-       RETURNING id`,
-      [DEMO.cognitoSub, DEMO.email, DEMO.displayName],
-    );
-    const userId = user.rows[0].id as string;
+    let userId: string;
+
+    if (attachEmail) {
+      // Attach to a real account that has already signed in (the Cognito
+      // post-confirmation trigger creates the row on first login).
+      const existing = await client.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [attachEmail]);
+      if (existing.rows.length === 0) {
+        throw new Error(
+          `no user with email ${attachEmail} - sign in to the product once so the account exists, then retry`,
+        );
+      }
+      userId = existing.rows[0].id;
+      console.log(`attaching the demo agent to existing user ${attachEmail}`);
+    } else {
+      const user = await client.query(
+        `INSERT INTO users (cognito_sub, email, display_name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (cognito_sub) DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = now()
+         RETURNING id`,
+        [DEMO.cognitoSub, DEMO.email, DEMO.displayName],
+      );
+      userId = user.rows[0].id as string;
+    }
 
     const agent = await client.query(
       `INSERT INTO concordium_agents (
@@ -105,6 +129,15 @@ async function main(): Promise<void> {
            ON CONFLICT (id) DO NOTHING`,
           [sessionId, userId, `demo-market-${index + 1}`],
         );
+      }
+
+      // Sessions inserted by an earlier run belong to the previous owner; move
+      // them so the anchoring job (which joins through sessions) sees them.
+      if (attachEmail) {
+        await client.query(`UPDATE portfolio_manager_sessions SET user_id = $1 WHERE id = ANY($2::uuid[])`, [
+          userId,
+          sessionIds,
+        ]);
       }
 
       for (const d of decisions) {

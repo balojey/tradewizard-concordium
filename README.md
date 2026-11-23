@@ -99,8 +99,8 @@ docs/                      # Design records, hackathon assessment and spike resu
 - [`docs/concordium-polymarket-mapping.md`](docs/concordium-polymarket-mapping.md) — which Polymarket key is the agent, and why we bind the signer EOA rather than the Safe
 - [`docs/concordium-attestation.md`](docs/concordium-attestation.md) — anchoring a decision epoch on-chain and proving one trade's inclusion
 - [`docs/concordium-testing.md`](docs/concordium-testing.md) — the four test layers, what each covers, and what is still untested
-- [`docs/devpost-submission.md`](docs/devpost-submission.md) — the written submission
-- [`docs/devpost-vo-script.md`](docs/devpost-vo-script.md) — three-minute demo script
+- [`docs/submission.md`](docs/submission.md) — the written submission (Encode Club)
+- [`docs/demo-script.md`](docs/demo-script.md) — three-minute demo script and shot list
 - [`infra/README.md`](infra/README.md) — deployment details
 - [`.kiro/steering/`](.kiro/steering/) — authoritative architecture notes
 

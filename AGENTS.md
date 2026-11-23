@@ -70,4 +70,4 @@ npm run typecheck    # tsc --noEmit
 ## Stale sources
 
 - `docs/agentcore-migration.md` describes a legacy Bedrock Agents architecture already replaced by the self-hosted Strands SDK Lambdas. `infra/README.md` still contains outdated file names and flags - trust `.kiro/steering/` and the code over them.
-- `docs/devpost-submission.md`, `docs/devpost-vo-script.md` and `docs/youtube-description.md` are hackathon-facing; keep them consistent with the code and with the status table in the root `README.md`. Do not claim a live badge or x402 settlement until `docs/concordium-spike.md` says they were actually executed.
+- `docs/submission.md`, `docs/demo-script.md` and `docs/youtube-description.md` are hackathon-facing (submitted through **Encode Club**, not Devpost); keep them consistent with the code and with the status table in the root `README.md`. Do not claim a live badge or x402 settlement until `docs/concordium-spike.md` says they were actually executed.
