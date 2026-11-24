@@ -439,7 +439,12 @@ export class AdminStack extends cdk.Stack {
     });
 
     const gatewayResponseHeaders = {
-      'Access-Control-Allow-Origin': `'${allowedOrigins[0]}'`,
+      // Gateway responses are produced by API Gateway, before the Lambda runs, so
+      // the caller's origin cannot be echoed per request. Development allows any
+      // origin for these error responses (they carry no data and the portal uses
+      // bearer tokens, not cookies); production pins the single known origin.
+      'Access-Control-Allow-Origin': isProd ? `'${allowedOrigins[0]}'` : "'*'",
+      Vary: "'Origin'",
       'Access-Control-Allow-Headers': "'Content-Type,Authorization,Idempotency-Key'",
       'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'",
     };
