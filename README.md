@@ -208,6 +208,13 @@ RPC, platform wallet, Polymarket builder credentials — is inherited unchanged:
 `NEXT_PUBLIC_API_URL` stays `http://localhost:3000`: it is only used by
 `scripts/test-frontend-api-integration.ts`, not by the app.
 
+There is no separate production stack: `.env.local` and `.env.production.local`
+hold the same values and both point at the dev deployment. Because `amplify.yml`
+writes the console's `NEXT_PUBLIC_*` variables into `.env.production` at build
+time, the Amplify app's environment variables must be set to the same four values
+— a gitignored `.env.production.local` never reaches the hosted build. The
+Amplify domain also needs adding to the Magic project's allowlist.
+
 Verified after populating: `npm run dev` boots, `/` returns 200, `/markets`
 redirects (307) as the auth guard expects, CORS preflight from
 `http://localhost:3100` returns 204, and the Cognito client
