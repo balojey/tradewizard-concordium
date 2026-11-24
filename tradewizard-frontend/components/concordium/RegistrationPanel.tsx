@@ -102,6 +102,26 @@ export function RegistrationPanel({ agent }: { agent?: ConcordiumAgent }) {
     }
   }
 
+  /**
+   * Rebuild the card with the badge now that the token exists, then pin its hash
+   * on chain. Registration alone leaves the agent "registered, not verified".
+   */
+  async function publishVerifiedCard(agentId: string) {
+    clear();
+    setBusy('badge-card');
+    try {
+      const card = await generateCard.mutateAsync(agentId);
+      setBusy(null);
+      await signAndConfirm(agentId, 'set-uri', {
+        agentUri: card.cardUrl,
+        metadataHashHex: card.metadataHashHex,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not publish the verified card.');
+      setBusy(null);
+    }
+  }
+
   /** Sign one contract update and record it, retrying while the index catches up. */
   async function signAndConfirm(agentId: string, step: 'register' | 'set-uri', extra: Record<string, unknown> = {}) {
     clear();
@@ -234,6 +254,30 @@ export function RegistrationPanel({ agent }: { agent?: ConcordiumAgent }) {
             </>
           )}
         </Step>
+        {hasToken && (
+          <Step n={4} title="Publish the verified card" done={agent.badgeTrust === 'verified'}>
+            {agent.badgeTrust === 'verified' ? (
+              <>The registry confirms the badge — nothing left to do here.</>
+            ) : (
+              <>
+                Adds the Verified by Concordium badge to the card and pins its new hash — this is what moves the agent
+                from <span className="mx-1 text-fg">registered</span> to <span className="mx-1 text-fg">verified</span>.
+                <div className="mt-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => publishVerifiedCard(agent.id)}
+                    loading={busy === 'badge-card' || busy === 'set-uri'}
+                    disabled={!wallet.account}
+                  >
+                    Publish verified card
+                  </Button>
+                  {!wallet.account && <span className="ml-2">Connect the wallet to sign it.</span>}
+                </div>
+              </>
+            )}
+          </Step>
+        )}
       </ol>
 
       {busy === 'register' && (

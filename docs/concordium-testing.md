@@ -84,6 +84,7 @@ the post-confirmation trigger would create, and then asserts:
 | Tamper | decision edited → 409 `epoch_not_reproducible`, then restored |
 | Guards | unknown agent 404; non-UUID card id 404 |
 | Self-serve registration (`--self-serve`) | API returns a sign-ready payload; a local signature submits it; the minted token is confirmed back into the API; a mismatched badge is *not* reported as verified |
+| In-app registration (`--in-app`) | The API generates and hosts the card, the served bytes match the returned hash, and confirm resolves the token from the transaction hash alone — the path a browser user takes, minus the wallet click |
 
 `--link-fixtures` repoints the seeded agent and its sessions at the test user so
 the authenticated read paths run against real data (token 1224, a real anchored

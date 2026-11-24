@@ -334,8 +334,9 @@ export function TrustPanel() {
   // No agent yet: the panel becomes the way to create one, not a dead end.
   if (!agent) return <RegistrationPanel />;
 
-  // Record created but not minted: show the remaining steps above the facts.
-  if (!agent.tokenId) {
+  // Still needs work: not minted yet, or minted but not yet carrying a verified
+  // badge. Keep the steps visible until the registry agrees.
+  if (!agent.tokenId || agent.badgeTrust !== 'verified') {
     return (
       <div className="flex flex-col gap-4">
         <RegistrationPanel agent={agent} />

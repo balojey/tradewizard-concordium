@@ -316,6 +316,55 @@ async function main(): Promise<void> {
   check('served bytes equal the pinned hash', servedHash === CARD_HASH, { servedHash, CARD_HASH });
   check('cache-control is no-store', served.headers.get('cache-control') === 'no-store', served.headers.get('cache-control'));
 
+  // In-app registration: exactly what a signed-in user's browser does now -
+  // create the record, let the API build and host the card, sign the returned
+  // payload, then confirm with nothing but the transaction hash.
+  if (process.argv.includes('--in-app')) {
+    console.log('\nIn-app registration (card generated + hosted by the API)');
+
+    const generated = await fetch(`${cfg.api}/concordium/agents/${agentId}/card/generate`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({}),
+    });
+    const generatedBody = await generated.json();
+    check('API generated and stored a card', generated.status === 200, generatedBody);
+    check('card is hosted by the API itself', String(generatedBody.cardUrl).includes(`/concordium/agents/${agentId}/card`), generatedBody.cardUrl);
+
+    const served = await fetch(String(generatedBody.cardUrl));
+    const servedText = await served.text();
+    const { createHash } = await import('node:crypto');
+    const servedHash = createHash('sha256').update(servedText).digest('hex');
+    check('served card matches the hash it returned', servedHash === generatedBody.metadataHashHex, { servedHash, expected: generatedBody.metadataHashHex });
+
+    const payloadResponse = await fetch(`${cfg.api}/concordium/agents/${agentId}/payload`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ step: 'register' }),
+    });
+    const signable = await payloadResponse.json();
+    check('register payload returned', payloadResponse.status === 200, signable);
+
+    const submitted = await submitPayload({
+      contract_address: signable.contractAddress,
+      receive_name: signable.receiveName,
+      parameter_hex: signable.parameterHex,
+      suggested_energy: signable.energy,
+    });
+    check('payload signed and submitted', typeof submitted.hash === 'string', submitted);
+
+    // Confirm with ONLY the hash: the API resolves the token from the registry.
+    const confirm = await fetch(`${cfg.api}/concordium/agents/${agentId}/confirm`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ step: 'register', txHash: submitted.hash }),
+    });
+    const confirmBody = await confirm.json();
+    check('confirm resolved the token from the tx hash alone', confirm.status === 200, confirmBody);
+    check('agent is active and carries the token', confirmBody.agent?.status === 'active' && Boolean(confirmBody.agent?.tokenId), confirmBody.agent);
+    console.log(`  in-app agent token ${confirmBody.agent?.tokenId} (${confirmBody.agent?.tokenAddress}), tx ${String(submitted.hash).slice(0, 16)}…`);
+  }
+
   // Self-serve registration: the API builds the payload, any signer submits it.
   // This is the path a wallet-connector UI would take, minus the UI.
   if (process.argv.includes('--self-serve')) {
