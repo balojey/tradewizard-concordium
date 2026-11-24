@@ -56,7 +56,7 @@ We did not migrate anything to Concordium. The agent keeps executing on Polygon/
 | Epoch anchoring job (6-hourly, staged for signature) | ✅ built, 14 tests |
 | Root anchored on-chain + proof verified | ✅ executed: three live-market decisions anchored (`decisionRoot:20261123T152416.424Z`, tx `50e859b8…`), reads back identical |
 | Inclusion-proof endpoint | ✅ built, verified against anchored root |
-| Accountability panel in the app | ✅ built — badge state, live re-verify, browser-side card hash check, anchored epochs, decision proofs |
+| Accountability panel in the app | ✅ built on the Portfolio Manager page (badge state, live re-verify, browser-side card hash check, anchored epochs, decision proofs), with a summary row on the portfolio page |
 | Mint → live `badge_valid: true` | ✅ executed: token `1224` on testnet, 15/15 checks, zero issues |
 | CIS-8 binding to the Polymarket signer | ✅ executed: `eip155:137` secp256k1 key registered and attached to token `1224` |
 | Self-serve registration | ✅ executed: API builds the sign-ready payload, an external signer submits, the API records the token (testnet token `1454`) |

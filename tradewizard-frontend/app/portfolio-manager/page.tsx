@@ -12,6 +12,7 @@ import {
   LifeBuoy,
 } from 'lucide-react';
 import { AppShell } from '@/components/shell/AppShell';
+import { TrustPanel } from '@/components/concordium/TrustPanel';
 import { SupportDialog } from '@/components/support/SupportDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -247,6 +248,14 @@ export default function PortfolioManagerPage() {
             caption={`of ${maxSessions} max`}
           />
         </div>
+
+        <section className="mt-5">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold text-fg">Agent accountability</h2>
+            <span className="text-[0.62rem] text-muted">On-chain identity and the decisions it committed to</span>
+          </div>
+          <TrustPanel />
+        </section>
 
         <section className="mt-5 overflow-hidden rounded-2xl border border-border bg-surface">
           <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3.5 sm:px-5">
