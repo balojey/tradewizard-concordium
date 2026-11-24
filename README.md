@@ -215,6 +215,13 @@ time, the Amplify app's environment variables must be set to the same four value
 — a gitignored `.env.production.local` never reaches the hosted build. The
 Amplify domain also needs adding to the Magic project's allowlist.
 
+The admin portal (`tradewizard-admin/`) follows the same rule: `.env.local` and
+`.env.production` carry `NEXT_PUBLIC_ADMIN_API_BASE_URL` =
+`https://4fy4dgg2h1.execute-api.us-east-1.amazonaws.com/dev/` (trailing slash),
+`NEXT_PUBLIC_ADMIN_CLIENT_ID` = the dev admin client, and
+`NEXT_PUBLIC_PRODUCT_BASE_URL` pointing at the customer app. Signing in there
+needs an account seeded with an admin role (`npm run seed:admin` in `infra/`).
+
 Verified after populating: `npm run dev` boots, `/` returns 200, `/markets`
 redirects (307) as the auth guard expects, CORS preflight from
 `http://localhost:3100` returns 204, and the Cognito client
