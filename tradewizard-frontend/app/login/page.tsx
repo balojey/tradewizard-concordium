@@ -94,6 +94,18 @@ function LoginContent() {
 
   // Keep a ref to the Magic login handle so we can emit events to it
   const handleRef = useRef<any>(null);
+  // Watchdog for the "code sent" event. Without it a blocked or silent request
+  // to Magic leaves the button spinning forever with nothing to report.
+  const otpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearOtpTimeout = useCallback(() => {
+    if (otpTimeoutRef.current) {
+      clearTimeout(otpTimeoutRef.current);
+      otpTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearOtpTimeout, [clearOtpTimeout]);
 
   const navigateAfterAuth = useCallback(() => {
     const next = searchParams.get("next");
@@ -142,9 +154,25 @@ function LoginContent() {
 
       handleRef.current = handle;
 
+      otpTimeoutRef.current = setTimeout(() => {
+        otpTimeoutRef.current = null;
+        console.error("Magic did not emit EmailOTPSent within 20s");
+        setError(
+          "Magic did not respond while sending the code. Usually this means a request to magic.link was blocked (ad-blocker, privacy extension, or third-party cookies disabled), or the network is unreachable. Check the browser console, then try again."
+        );
+        setIsSubmitting(false);
+        setStep("email");
+        try {
+          handle.emit(LoginWithEmailOTPEventEmit.Cancel);
+        } catch {
+          // The handle may already be gone; nothing to cancel.
+        }
+      }, 20_000);
+
       handle
         .on(LoginWithEmailOTPEventOnReceived.EmailOTPSent, () => {
           // OTP has been sent - show the code input
+          clearOtpTimeout();
           setStep("otp");
           setIsSubmitting(false);
         })
@@ -156,6 +184,7 @@ function LoginContent() {
         })
         .on("done", async () => {
           // Magic login complete - sync to Cognito
+          clearOtpTimeout();
           setIsSubmitting(true);
           const synced = await syncMagicToCognito(normalized);
 
@@ -168,6 +197,7 @@ function LoginContent() {
           setIsSubmitting(false);
         })
         .on("error", (reason: any) => {
+          clearOtpTimeout();
           console.error("Magic login error:", reason);
           setError(
             reason?.message || "Login failed. Please try again."
@@ -176,6 +206,7 @@ function LoginContent() {
           setStep("email");
         });
     } catch (err) {
+      clearOtpTimeout();
       setError(
         err instanceof Error
           ? err.message
