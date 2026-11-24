@@ -167,3 +167,60 @@ export function useCardIntegrity(cardUrl: string | undefined, expectedHash: stri
     retry: false,
   });
 }
+
+// ─── Registration ─────────────────────────────────────────────────────────────
+
+export interface SignablePayload {
+  step: string;
+  contractAddress: { index: number; subindex: number };
+  receiveName: string;
+  parameterHex: string;
+  energy: number;
+  metadata: Record<string, unknown>;
+}
+
+export function useCreateConcordiumAgent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { concordiumAccount: string; externalKeyHex?: string }) =>
+      post<{ agent: ConcordiumAgent }>('/concordium/agents', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['concordium', 'agents'] });
+    },
+  });
+}
+
+/** Ask the API to build and publish this agent's card at our own public URL. */
+export function useGenerateCard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) =>
+      post<{ agent: ConcordiumAgent; cardUrl: string; metadataHashHex: string }>(
+        `/concordium/agents/${agentId}/card/generate`,
+        {},
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['concordium', 'agents'] });
+    },
+  });
+}
+
+/** Get a sign-ready contract update for one registration step. */
+export function useRegistrationPayload() {
+  return useMutation({
+    mutationFn: (input: { agentId: string; body: Record<string, unknown> }) =>
+      post<SignablePayload>(`/concordium/agents/${input.agentId}/payload`, input.body),
+  });
+}
+
+/** Record a step the user signed and submitted. */
+export function useConfirmStep() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { agentId: string; body: Record<string, unknown> }) =>
+      post<{ agent: ConcordiumAgent }>(`/concordium/agents/${input.agentId}/confirm`, input.body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['concordium', 'agents'] });
+    },
+  });
+}

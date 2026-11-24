@@ -1461,6 +1461,7 @@ export class ComputeStack extends cdk.Stack {
 
     const concordiumAgentCard = concordiumAgentById.addResource('card');
     concordiumAgentCard.addMethod('POST', concordiumIntegration, authMethodOptions);
+    concordiumAgentCard.addResource('generate').addMethod('POST', concordiumIntegration, authMethodOptions);
     concordiumAgentCard.addMethod('GET', concordiumIntegration, {
       authorizationType: apigateway.AuthorizationType.NONE,
     });

@@ -138,9 +138,10 @@ rather than ids.
   not go through our API.
 - **Ownership checks on mint** — the API records whatever token address it is
   given; canonical validity is decided by the registry at verification time.
-- **Browser wallet signing** — `payload`/`confirm` are proven against the API with
-  a local signer, but no wallet connector is wired into the UI yet, so the
-  signature is still produced outside the browser.
+- **Browser wallet signing** — wired in the UI (`hooks/useConcordiumWallet.ts`,
+  feature-detected, lazy-loaded so prerendering is unaffected) but not exercised
+  here: it needs the Concordium Wallet for Web extension. The payload it signs
+  and the confirm that follows are covered by the API tests.
 - **Concurrency** — two simultaneous anchors for one agent are covered by a
   unique index and a duplicate-detection test, but not by a load test.
 

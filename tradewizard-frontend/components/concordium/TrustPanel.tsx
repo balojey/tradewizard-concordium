@@ -13,6 +13,7 @@ import {
   ShieldQuestion,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { RegistrationPanel } from '@/components/concordium/RegistrationPanel';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/utils/classNames';
@@ -330,18 +331,16 @@ export function TrustPanel() {
     );
   }
 
-  if (!agent) {
+  // No agent yet: the panel becomes the way to create one, not a dead end.
+  if (!agent) return <RegistrationPanel />;
+
+  // Record created but not minted: show the remaining steps above the facts.
+  if (!agent.tokenId) {
     return (
-      <Card className="px-4 py-6">
-        <div className="flex items-center gap-2">
-          <ShieldQuestion className="h-4 w-4 text-muted" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-fg">Accountability</h3>
-        </div>
-        <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted">
-          This account has no agent registered on Concordium yet. Once one is registered, this panel shows the verified
-          identity behind it, the decision epochs anchored on chain, and a proof you can recompute yourself.
-        </p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        <RegistrationPanel agent={agent} />
+        <AgentCard agent={agent} />
+      </div>
     );
   }
 

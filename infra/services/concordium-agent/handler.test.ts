@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { createHandler, type ConcordiumAgentDeps } from './handler';
 import { computeDecisionRoot } from '../shared/concordium/decision-root';
@@ -1164,5 +1164,139 @@ describe('self-serve registration', () => {
     const result = await run(s.deps)(confirmEvent(s.id, { step: 'register', txHash: 'nope', tokenId: '1', tokenAddress: TOKEN_ADDRESS }));
     expect(result.statusCode).toBe(400);
     expect(parse(result).code).toBe('invalid_tx_hash');
+  });
+});
+
+describe('in-app registration support', () => {
+  const TX = 'ab'.repeat(32);
+  // The handler re-checks that the JSON matches the hash the tool returned, so
+  // the stub must return the real digest of the fixture card.
+  const CARD_SHA = createHash('sha256').update(CARD).digest('hex');
+
+  function registryReturning(responses: Record<string, unknown>) {
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const registry: AgentRegistryClient = {
+      network: 'testnet',
+      callTool: (async (name: string, args: Record<string, unknown>) => {
+        calls.push({ name, args });
+        return responses[name] ?? {};
+      }) as unknown as AgentRegistryClient['callTool'],
+      listTools: async () => [],
+      checkBadge: async () => VALID_VERDICT,
+    };
+    return { registry, calls };
+  }
+
+  async function newAgent(registry: AgentRegistryClient) {
+    const store = makeDeps();
+    store.deps.registry = registry;
+    const created = await run(store.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents', body: body({ concordiumAccount: ACCOUNT }) }),
+    );
+    return { ...store, id: parse(created).agent.id as string };
+  }
+
+  it('generates and publishes a card at our own URL, without the user hosting anything', async () => {
+    const { registry, calls } = registryReturning({
+      build_agent_card: { agent_card_json: CARD, metadata_hash_hex: CARD_SHA },
+    });
+    const s = await newAgent(registry);
+
+    const result = await run(s.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/card/generate', pathParameters: { id: s.id } }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    const payload = parse(result);
+    expect(payload.cardUrl).toBe(`https://api.test/concordium/agents/${s.id}/card`);
+    expect(payload.metadataHashHex).toBe(CARD_SHA);
+    // The card points at the URL we actually serve.
+    expect(calls[0]).toMatchObject({ name: 'build_agent_card' });
+    expect((calls[0].args as { agent_uri: string }).agent_uri).toContain(`/concordium/agents/${s.id}/card`);
+  });
+
+  it('uses the badge builder once the agent is minted', async () => {
+    const { registry, calls } = registryReturning({
+      build_agent_badge: { agent_card_json: CARD, metadata_hash_hex: CARD_SHA },
+    });
+    const s = await newAgent(registry);
+    s.repo.rows.get(s.id)!.token_id = '1224';
+
+    const result = await run(s.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/card/generate', pathParameters: { id: s.id } }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(calls[0]).toMatchObject({ name: 'build_agent_badge' });
+    expect((calls[0].args as { token_id: string }).token_id).toBe('1224');
+  });
+
+  it('rejects a generated card whose bytes miss the returned hash', async () => {
+    const { registry } = registryReturning({
+      build_agent_card: { agent_card_json: CARD, metadata_hash_hex: '00'.repeat(32) },
+    });
+    const s = await newAgent(registry);
+
+    const result = await run(s.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/card/generate', pathParameters: { id: s.id } }),
+    );
+    expect(result.statusCode).toBe(500);
+  });
+
+  it('resolves the token from the registry when confirm only gets a tx hash', async () => {
+    const { registry, calls } = registryReturning({
+      build_agent_card: { agent_card_json: CARD, metadata_hash_hex: CARD_SHA },
+      agents_by_owner: {
+        agents: [
+          { token_id: 1224, metadata_hash_hex: 'aa'.repeat(32), status: 'Active' },
+          { token_id: 1454, metadata_hash_hex: CARD_SHA, status: 'Active' },
+          { token_id: 1120, metadata_hash_hex: CARD_SHA, status: 'Revoked' },
+        ],
+      },
+      token_address: { token_address: 'JyP9XAsE2iPKCcrZJf9se' },
+    });
+    const s = await newAgent(registry);
+    await run(s.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/card/generate', pathParameters: { id: s.id } }),
+    );
+
+    const result = await run(s.deps)(
+      event({
+        httpMethod: 'POST',
+        resource: '/concordium/agents/{id}/confirm',
+        pathParameters: { id: s.id },
+        body: body({ step: 'register', txHash: TX }),
+      }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(parse(result).agent).toMatchObject({
+      status: 'active',
+      tokenId: '1454',
+      tokenAddress: 'JyP9XAsE2iPKCcrZJf9se',
+    });
+    expect(calls.some((c) => c.name === 'agents_by_owner')).toBe(true);
+  });
+
+  it('explains itself when nothing matching the card is minted yet', async () => {
+    const { registry } = registryReturning({
+      build_agent_card: { agent_card_json: CARD, metadata_hash_hex: CARD_SHA },
+      agents_by_owner: { agents: [{ token_id: 1, metadata_hash_hex: 'aa'.repeat(32), status: 'Active' }] },
+    });
+    const s = await newAgent(registry);
+    await run(s.deps)(
+      event({ httpMethod: 'POST', resource: '/concordium/agents/{id}/card/generate', pathParameters: { id: s.id } }),
+    );
+
+    const result = await run(s.deps)(
+      event({
+        httpMethod: 'POST',
+        resource: '/concordium/agents/{id}/confirm',
+        pathParameters: { id: s.id },
+        body: body({ step: 'register', txHash: TX }),
+      }),
+    );
+    expect(result.statusCode).toBe(409);
+    expect(parse(result).code).toBe('not_registered_on_chain');
   });
 });
