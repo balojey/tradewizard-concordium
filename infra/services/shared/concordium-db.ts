@@ -239,6 +239,7 @@ export interface DecisionRowSource {
   session_id: string;
   /** Context for humans; deliberately not part of the hashed leaf. */
   market_id?: string;
+  market_question?: string | null;
   /** Joined analysis context (display only). */
   recommendation?: string | null;
   consensus_probability?: number | string | null;
@@ -318,6 +319,7 @@ const DECISION_SELECT = `
   d.id,
   d.session_id,
   s.market_id,
+  m.question AS market_question,
   ar.recommendation,
   ar.consensus_probability::float8 AS consensus_probability,
   ar.market_probability_at_execution::float8 AS market_probability_at_execution,
@@ -364,6 +366,7 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
              FROM portfolio_manager_decisions d
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
              LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
+             LEFT JOIN markets m ON m.condition_id = s.market_id
             WHERE s.user_id = $1
               -- Epoch boundaries are stored at millisecond precision (that is what
               -- the leaf hashes), while created_at keeps microseconds. Comparing the
@@ -458,6 +461,7 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
              FROM portfolio_manager_decisions d
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
              LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
+             LEFT JOIN markets m ON m.condition_id = s.market_id
             WHERE s.user_id = $1
               AND date_trunc('milliseconds', d.created_at) >= $2::timestamptz
               AND date_trunc('milliseconds', d.created_at) <= $3::timestamptz

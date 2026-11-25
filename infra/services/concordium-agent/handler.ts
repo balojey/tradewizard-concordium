@@ -796,6 +796,7 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
         createdAt: decision.createdAt,
         /** Context, not part of the leaf: which market, and what the analysis said. */
         marketId: rows[index]?.market_id ?? null,
+        marketQuestion: rows[index]?.market_question ?? null,
         analysis: {
           recommendation: rows[index]?.recommendation ?? null,
           consensusProbability: rows[index]?.consensus_probability ?? null,
@@ -881,7 +882,10 @@ export function createHandler(deps: ConcordiumAgentDeps): APIGatewayProxyHandler
       anchor: toApiAnchor(anchor),
       decision: decisions[index],
       /** Display context only; the leaf above is what the root commits to. */
-      context: { marketId: rows[index]?.market_id ?? null },
+      context: {
+        marketId: rows[index]?.market_id ?? null,
+        marketQuestion: rows[index]?.market_question ?? null,
+      },
       leafVersion: DECISION_LEAF_VERSION,
       proof,
       rootHash: anchor.root_hash,

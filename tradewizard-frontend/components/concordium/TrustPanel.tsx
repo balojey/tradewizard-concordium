@@ -146,6 +146,9 @@ function AnchorRow({ agentId, anchor }: { agentId: string; anchor: ConcordiumAnc
                           <span className="ml-1.5 normal-case text-muted">· {decision.analysis.recommendation}</span>
                         )}
                       </span>
+                      {decision.marketQuestion && (
+                        <span className="truncate text-[0.62rem] text-muted">{decision.marketQuestion}</span>
+                      )}
                       <span className="truncate font-mono text-[0.62rem] text-muted">
                         {short(decision.marketId, 10, 6)}
                         {decision.analysis?.edge !== null && decision.analysis?.edge !== undefined && (
@@ -193,7 +196,8 @@ function AnchorRow({ agentId, anchor }: { agentId: string; anchor: ConcordiumAnc
                 </span>
               </div>
               <p className="mt-1.5 font-mono text-[0.65rem] leading-relaxed text-muted">
-                market {short(proof.data.context?.marketId, 10, 6)} · leaf {short(proof.data.proof.leaf, 10, 6)} · index{' '}
+                {proof.data.context?.marketQuestion ? `${proof.data.context.marketQuestion} · ` : `market ${short(proof.data.context?.marketId, 10, 6)} · `}
+                leaf {short(proof.data.proof.leaf, 10, 6)} · index{' '}
                 {proof.data.proof.index} of {proof.data.proof.size} · path of {proof.data.proof.path.length}
               </p>
               <p className="mt-1 text-[0.65rem] text-muted">{proof.data.decision.reasoning}</p>
