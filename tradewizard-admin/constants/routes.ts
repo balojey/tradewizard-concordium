@@ -49,6 +49,7 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
     label: "Trading",
     items: [
       { label: "Portfolio", href: "/portfolio", requires: "analyst", ready: true, hint: "Sessions and exposure" },
+      { label: "Accountability", href: "/concordium", requires: "analyst", ready: true, hint: "Agent identity and epochs" },
     ],
   },
   {

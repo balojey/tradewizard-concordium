@@ -383,6 +383,12 @@ const ROUTE_MATRIX: Array<{
   { method: 'POST', path: '/admin/copilot/support', minimumRole: 'support' },
   { method: 'POST', path: '/admin/copilot/session', minimumRole: 'support' },
   { method: 'POST', path: '/admin/copilot/risk-brief', minimumRole: 'admin' },
+  // Concordium registry: reads for analysts, re-verification is an audited admin
+  // action because it changes the cached trust state support may rely on.
+  { method: 'GET', path: '/admin/concordium/agents', minimumRole: 'analyst' },
+  { method: 'POST', path: '/admin/concordium/agents/{id}/verify', minimumRole: 'admin' },
+  { method: 'GET', path: '/admin/concordium/epochs', minimumRole: 'analyst' },
+  { method: 'GET', path: '/admin/concordium/epochs/{anchorId}/integrity', minimumRole: 'analyst' },
 ];
 
 const ALL_ROLES: AdminRole[] = ['analyst', 'support', 'admin', 'owner'];

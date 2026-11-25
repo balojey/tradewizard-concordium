@@ -30,6 +30,7 @@ import { bootstrapRoutes } from '../routes/bootstrap';
 import { supportRoutes } from '../routes/support';
 import { newsletterRoutes } from '../routes/newsletter';
 import { copilotRoutes } from '../routes/copilot';
+import { concordiumRoutes } from '../routes/concordium';
 
 export interface RouteContext {
   event: AdminApiEvent;
@@ -85,6 +86,7 @@ export const ROUTES: AdminRoute[] = [
   ...inviteLinkRoutes,
   ...settingsRoutes,
   ...bootstrapRoutes,
+  ...concordiumRoutes,
   ...supportRoutes,
   ...newsletterRoutes,
   ...copilotRoutes,

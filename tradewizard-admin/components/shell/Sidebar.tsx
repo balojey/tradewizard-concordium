@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   Users,
   CalendarClock,
+  BadgeCheck,
   type LucideIcon,
 } from "lucide-react";
 import { ADMIN_NAV_GROUPS, activeNavHref } from "@/constants/routes";
@@ -28,6 +29,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/markets": CalendarClock,
   "/agents": Bot,
   "/portfolio": LineChart,
+  "/concordium": BadgeCheck,
   "/audit": ScrollText,
   "/members": ShieldCheck,
   "/settings": SlidersHorizontal,
