@@ -182,6 +182,7 @@ const commands: Record<string, () => Promise<void>> = {
    */
   async perturb() {
     const decisionId = String(arg('decision'));
+    const toggle = !!arg('toggle');
     const restore = !!arg('restore');
     const replacement = String(arg('reasoning', 'exited earlier, at a better price'));
 
@@ -191,13 +192,18 @@ const commands: Record<string, () => Promise<void>> = {
 
     await client.connect();
     try {
-      if (restore) {
-        const row = await client.query<{ reasoning: string }>(
-          `SELECT reasoning FROM portfolio_manager_decisions WHERE id = $1`,
-          [decisionId],
-        );
-        if (row.rows.length === 0) throw new Error(`decision ${decisionId} not found`);
-        const original = row.rows[0].reasoning.replace(/^\[perturbed\] /, '');
+      const current = await client.query<{ reasoning: string }>(
+        `SELECT reasoning FROM portfolio_manager_decisions WHERE id = $1`,
+        [decisionId],
+      );
+      if (current.rows.length === 0) throw new Error(`decision ${decisionId} not found`);
+      const isPerturbed = current.rows[0].reasoning.startsWith('[perturbed] ');
+      // --toggle makes the demo one command: first run breaks it, second run
+      // puts it back, so nothing has to be typed differently on camera.
+      const shouldRestore = restore || (toggle && isPerturbed);
+
+      if (shouldRestore) {
+        const original = current.rows[0].reasoning.replace(/^\[perturbed\] /, '');
         await client.query(`UPDATE portfolio_manager_decisions SET reasoning = $2 WHERE id = $1`, [
           decisionId,
           original,
