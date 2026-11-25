@@ -159,6 +159,14 @@ Worth recording, because each was invisible to the layer above it:
    genuine CIS-2 address was rejected. Found by the e2e's first real mint.
 4. **A claimed token returned 500 instead of 409.** The unique index fired and
    the handler had no mapping for it. Found by the same e2e.
-5. **The proof endpoint could not read its own on-chain value.** It expected a
+5. **An epoch boundary at millisecond precision excluded the last decision.**
+   Epoch start/end are stored as millisecond strings (that is what the leaf
+   hashes), but `created_at` keeps microseconds, so `<= epoch_end` dropped a
+   decision whose timestamp was `.424182` against an end of `.424`. The same
+   comparison in the anchoring job would have re-anchored that decision on the
+   next run. Both queries now truncate the column to milliseconds. Found by the
+   portal's integrity check reporting "2 of 3" on an epoch the product had
+   happily shown as anchored.
+6. **The proof endpoint could not read its own on-chain value.** It expected a
    32-byte digest; the registry stores the 64-character root as UTF-8 text. Found
    by the e2e's `onChain.matches` assertion.

@@ -365,7 +365,12 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
              LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
             WHERE s.user_id = $1
-              AND ($2::timestamptz IS NULL OR d.created_at > $2::timestamptz)
+              -- Epoch boundaries are stored at millisecond precision (that is what
+              -- the leaf hashes), while created_at keeps microseconds. Comparing the
+              -- raw column would re-anchor the last decision of an epoch and could
+              -- drop it from a rebuild, so both sides are truncated to ms.
+              AND ($2::timestamptz IS NULL
+                   OR date_trunc('milliseconds', d.created_at) > $2::timestamptz)
             ORDER BY d.created_at ASC, d.id ASC
             LIMIT $3`,
           [userId, since, limit],
@@ -454,8 +459,8 @@ export function createPgAnchorRepository(): ConcordiumAnchorRepository {
              JOIN portfolio_manager_sessions s ON s.id = d.session_id
              LEFT JOIN analysis_results ar ON ar.id = d.analysis_result_id
             WHERE s.user_id = $1
-              AND d.created_at >= $2::timestamptz
-              AND d.created_at <= $3::timestamptz
+              AND date_trunc('milliseconds', d.created_at) >= $2::timestamptz
+              AND date_trunc('milliseconds', d.created_at) <= $3::timestamptz
             ORDER BY d.created_at ASC, d.id ASC
             LIMIT $4`,
           [userId, epochStart, epochEnd, limit],
